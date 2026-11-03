@@ -1,4 +1,4 @@
-package com.zlatty.hotboi
+package com.medusko.hotboi
 
 import com.google.gson.annotations.SerializedName
 

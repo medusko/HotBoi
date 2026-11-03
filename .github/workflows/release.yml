@@ -53,4 +53,4 @@ jobs:
             - **APK Asset**: [HotBoi-beta.apk](HotBoi-beta.apk)
             - **Target SDK**: Android 15 (API 35)
             - **Minimum SDK**: Android 8.0 (API 26)
-            - **Package**: `com.zlatty.hotboi.debug`
+            - **Package**: `com.medusko.hotboi.debug`

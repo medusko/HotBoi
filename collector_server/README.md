@@ -16,7 +16,7 @@ chmod +x install_macos_service.sh
 ```
 
 - **Installed Directory**: `~/.hotboi/`
-- **Service Configuration**: `~/Library/LaunchAgents/com.zlatty.hotboi.plist`
+- **Service Configuration**: `~/Library/LaunchAgents/com.medusko.hotboi.plist`
 - **View Live Logs**: `tail -f /tmp/hotboi_collector.log`
 - **Dashboard**: `http://localhost:8080`
 - **Telemetry API**: `http://localhost:8080/api/telemetry`

@@ -1,4 +1,4 @@
-package com.zlatty.hotboi
+package com.medusko.hotboi
 
 import android.app.Application
 import android.content.Context

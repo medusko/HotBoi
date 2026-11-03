@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.zlatty.hotboi"
+    namespace = "com.medusko.hotboi"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.zlatty.hotboi"
+        applicationId = "com.medusko.hotboi"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
