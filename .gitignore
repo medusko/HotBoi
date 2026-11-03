@@ -1,0 +1,28 @@
+# Built binaries and packages
+*.apk
+*.aab
+
+# Gradle files
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# Local configuration & environment
+local.properties
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# IDE & OS files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

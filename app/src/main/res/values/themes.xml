@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.HotBoi" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary_cyan</item>
+        <item name="colorSecondary">@color/accent_emerald</item>
+        <item name="android:statusBarColor">@color/bg_main</item>
+        <item name="android:navigationBarColor">@color/bg_main</item>
+        <item name="android:windowBackground">@color/bg_main</item>
+    </style>
+</resources>

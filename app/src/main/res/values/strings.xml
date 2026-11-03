@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">HotBoi</string>
+    <string name="settings">Settings</string>
+    <string name="refresh">Refresh</string>
+    <string name="server_url">Server URL</string>
+    <string name="default_server_url">http://192.168.0.134:8080</string>
+    <string name="auto_refresh">Auto Refresh (60s)</string>
+    <string name="use_local_offline">Load Bundled Offline Telemetry</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="connecting">Connecting to Thermal Monitor...</string>
+    <string name="connection_failed">Could not connect to server. Showing offline data.</string>
+</resources>

@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-10-28 21:37:40",
+  "optic_temp": 39.58,
+  "cpu0_temp": 54.5,
+  "cpu1_temp": 53.3,
+  "ploam": "O5.1",
+  "rx_power": -22.01,
+  "tx_power": 4.52,
+  "bias_ma": 13.918,
+  "ping_ms": 5.683,
+  "device_name": "UniFi Cloud Gateway Fiber (White Bean)",
+  "sfp_port": "Port 7 SFP+"
+}
