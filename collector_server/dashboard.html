@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta charset="UTF-8">
+  <title>HotBoi • SFP+ Optical Telemetry</title>
+  <script src="chart.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --text-muted: #64748b;
+      --primary: #38bdf8;
+      --accent: #34d399;
+      --grid-color: #334155;
+      --x-grid-color: #1e293b;
+      --badge-offline-bg: #1e293b;
+      --badge-offline-text: #94a3b8;
+    }
+
+    body.light-theme {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #cbd5e1;
+      --text-main: #0f172a;
+      --text-sub: #1e293b;
+      --text-muted: #475569;
+      --primary: #0284c7;
+      --accent: #059669;
+      --grid-color: #cbd5e1;
+      --x-grid-color: #f1f5f9;
+      --badge-offline-bg: #e2e8f0;
+      --badge-offline-text: #1e293b;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 16px;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* Standalone Web Navigation Bar (Displayed in desktop/server browsers) */
+    .web-navbar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      margin-bottom: 20px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .web-nav-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo-text {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #ef4444; /* Warm Red */
+    }
+    body.light-theme .brand-logo-text {
+      color: #dc2626;
+    }
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: var(--bg);
+      color: var(--primary);
+      border: 1px solid var(--card-border);
+    }
+    .web-nav-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .web-nav-btn {
+      background: var(--bg);
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .web-nav-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 14px;
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .subtitle {
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 4px;
+    }
+    .badges {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .status-badge {
+      background: #065f46;
+      color: #34d399;
+      padding: 5px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .light-theme .status-badge {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .info-badge {
+      background: var(--card-bg);
+      color: var(--text-sub);
+      border: 1px solid var(--card-border);
+      padding: 5px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .card-label {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-bottom: 6px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .card-val {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .card-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 4px;
+    }
+    .chart-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .chart-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 0;
+    }
+    .range-selector {
+      display: flex;
+      gap: 3px;
+      background: var(--bg);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      position: relative;
+      z-index: 20;
+    }
+    .range-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: all 0.15s ease;
+    }
+    .range-btn.active {
+      background: var(--card-bg);
+      color: var(--primary);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+    }
+    .chart-box {
+      position: relative;
+      height: 250px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Standalone Web Navigation Bar (Displayed on desktop/server web browsers) -->
+    <div class="web-navbar" id="standaloneWebNav">
+      <div class="web-nav-left">
+        <span class="brand-logo-text">HotBoi</span>
+        <span class="brand-tag">SFP+ Telemetry</span>
+        <span class="status-badge" id="webServerBadge">🟢 Live Server</span>
+      </div>
+      <div class="web-nav-right">
+        <button type="button" class="web-nav-btn" id="btnWebUnit" onclick="toggleWebUnit()">°C</button>
+        <button type="button" class="web-nav-btn" id="btnWebTheme" onclick="toggleWebTheme()">🌙 Dark</button>
+        <button type="button" class="web-nav-btn" id="btnWebRefresh" onclick="manualWebRefresh()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="header">
+      <div>
+        <div class="title">SFP+ Telemetry</div>
+        <div class="subtitle" id="dashboardSubtitle">Universal SFP+ / SFP28 &bull; Port 7 SFP+ &bull; Direct SSH</div>
+      </div>
+      <div class="badges">
+        <div class="status-badge" id="badgeState">
+          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#34d399;" id="dotState"></span>
+          <span id="valPloam">State O5.1 (Connected)</span>
+        </div>
+        <div class="info-badge" id="badgeSamples">Loading telemetry...</div>
+      </div>
+    </div>
+
+    <!-- Metric Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-label">OPTICAL TRANSCEIVER TEMP</div>
+        <div class="card-val" id="valOptic" style="color: #38bdf8;">--</div>
+        <div class="card-sub" id="subOptic">--</div>
+      </div>
+      <div class="card">
+        <div class="card-label">CPU CORE 0</div>
+        <div class="card-val" id="valCpu0" style="color: #10b981;">--</div>
+        <div class="card-sub" id="subCpu0">--</div>
+      </div>
+      <div class="card">
+        <div class="card-label">RX OPTICAL POWER</div>
+        <div class="card-val" id="valRx" style="color: #8b5cf6;">--</div>
+        <div class="card-sub" id="subRx">--</div>
+      </div>
+      <div class="card">
+        <div class="card-label">PING LATENCY</div>
+        <div class="card-val" id="valPing" style="color: #f59e0b;">--</div>
+        <div class="card-sub" id="subPing">--</div>
+      </div>
+    </div>
+
+    <!-- Temperature History Chart with Time Range Filter -->
+    <div class="chart-container">
+      <div class="chart-header">
+        <div class="chart-title">Thermal History &amp; Trip Limit</div>
+        <div class="range-selector" id="tempRangeSelector">
+          <button type="button" class="range-btn" onclick="setTimeRange('1h')">1h</button>
+          <button type="button" class="range-btn" onclick="setTimeRange('1d')">1d</button>
+          <button type="button" class="range-btn" onclick="setTimeRange('1w')">1w</button>
+          <button type="button" class="range-btn active" onclick="setTimeRange('all')">All</button>
+        </div>
+      </div>
+      <div class="chart-box">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Latency History Chart with Dynamic Target Domain -->
+    <div class="chart-container">
+      <div class="chart-header">
+        <div class="chart-title" id="latencyChartTitle">Internet Latency History</div>
+      </div>
+      <div class="chart-box">
+        <canvas id="latencyChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var currentUnit = "C";
+    var isLightMode = false;
+    var currentThresholdC = 79.0;
+    var activeRange = "all";
+    var rawTelemetryBundle = null;
+
+    function cToF(c) {
+      return (Number(c) * 9 / 5) + 32;
+    }
+
+    function formatVal(c) {
+      if (c == null || c === "") return "--";
+      if (currentUnit === "F") {
+        return cToF(c).toFixed(1) + " °F";
+      }
+      return Number(c).toFixed(1) + " °C";
+    }
+
+    function formatDual(c) {
+      if (c == null || c === "") return "--";
+      var cNum = Number(c);
+      var fNum = cToF(cNum);
+      if (currentUnit === "F") {
+        return fNum.toFixed(1) + " °F (" + cNum.toFixed(1) + " °C)";
+      }
+      return cNum.toFixed(1) + " °C (" + fNum.toFixed(1) + " °F)";
+    }
+
+    function getChartTheme() {
+      if (isLightMode) {
+        return {
+          grid: '#cbd5e1',
+          xGrid: '#f1f5f9',
+          ticks: '#475569',
+          legend: '#0f172a'
+        };
+      }
+      return {
+        grid: '#334155',
+        xGrid: '#1e293b',
+        ticks: '#94a3b8',
+        legend: '#f8fafc'
+      };
+    }
+
+    // Parse timestamp safely across mobile WebViews and desktop browsers
+    function parseTsToMs(ts) {
+      if (!ts) return 0;
+      var clean = ts.replace(" ", "T");
+      var ms = Date.parse(clean);
+      if (!isNaN(ms)) return ms;
+      var fallback = Date.parse(ts.replace(/-/g, "/"));
+      return isNaN(fallback) ? 0 : fallback;
+    }
+
+    // Custom Chart.js Plugin: Vertical Day Divider Lines noting the days cleanly on the graph
+    var dayDividerPlugin = {
+      id: 'dayDivider',
+      afterDraw: function(chart) {
+        if (!chart.data || !chart.data.fullTimestamps || chart.data.fullTimestamps.length < 2) return;
+        var ctx = chart.ctx;
+        var chartArea = chart.chartArea;
+        var xScale = chart.scales.x;
+        var timestamps = chart.data.fullTimestamps;
+        var lastDateStr = "";
+
+        ctx.save();
+        for (var i = 0; i < timestamps.length; i++) {
+          var ts = timestamps[i];
+          var dateStr = ts.indexOf(" ") !== -1 ? ts.split(" ")[0] : ts.split("T")[0];
+
+          if (lastDateStr && dateStr !== lastDateStr) {
+            var xPos = xScale.getPixelForTick(i);
+            if (xPos >= chartArea.left && xPos <= chartArea.right) {
+              // Draw vertical dashed line
+              ctx.beginPath();
+              ctx.strokeStyle = isLightMode ? '#94a3b8' : '#64748b';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([4, 4]);
+              ctx.moveTo(xPos, chartArea.top);
+              ctx.lineTo(xPos, chartArea.bottom);
+              ctx.stroke();
+
+              // Draw date label badge
+              ctx.setLineDash([]);
+              ctx.fillStyle = isLightMode ? '#0f172a' : '#38bdf8';
+              ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+              ctx.textAlign = 'left';
+
+              var parts = dateStr.split("-");
+              var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+              var mIdx = parseInt(parts[1], 10) - 1;
+              var label = (monthNames[mIdx] || "") + " " + parseInt(parts[2], 10);
+              ctx.fillText(label, xPos + 4, chartArea.top + 14);
+            }
+          }
+          lastDateStr = dateStr;
+        }
+        ctx.restore();
+      }
+    };
+
+    Chart.register(dayDividerPlugin);
+
+    // Initialize Temperature Chart
+    var ctxTemp = document.getElementById('tempChart').getContext('2d');
+    window.tempChartInstance = new Chart(ctxTemp, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Laser Optic (°C)',
+            data: [],
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 6
+          },
+          {
+            label: 'CPU Core 0 (°C)',
+            data: [],
+            borderColor: '#10b981',
+            fill: false,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 6
+          },
+          {
+            label: 'CPU Core 1 (°C)',
+            data: [],
+            borderColor: '#a3e635',
+            fill: false,
+            tension: 0.3,
+            borderWidth: 1.5,
+            borderDash: [3, 3],
+            pointRadius: 0,
+            pointHitRadius: 6
+          },
+          {
+            label: 'Trip Limit',
+            data: [],
+            borderColor: '#ef4444',
+            borderDash: [5, 5],
+            fill: false,
+            pointRadius: 0,
+            borderWidth: 1.5
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        scales: {
+          y: {
+            min: 35,
+            max: 90,
+            grid: { color: '#334155' },
+            ticks: { 
+              color: '#94a3b8',
+              font: { weight: '600' }
+            }
+          },
+          x: {
+            grid: { color: '#1e293b' },
+            ticks: { 
+              color: '#94a3b8',
+              font: { weight: '600' },
+              maxTicksLimit: 14
+            }
+          }
+        },
+        plugins: {
+          legend: { 
+            labels: { 
+              color: '#f8fafc',
+              font: { weight: '600' }
+            } 
+          }
+        }
+      }
+    });
+
+    // Initialize Latency Chart
+    var ctxLatency = document.getElementById('latencyChart').getContext('2d');
+    window.latencyChartInstance = new Chart(ctxLatency, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Ping Latency (ms)',
+            data: [],
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            fill: true,
+            tension: 0.2,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        scales: {
+          y: {
+            min: 0,
+            max: 40,
+            grid: { color: '#334155' },
+            ticks: { 
+              color: '#94a3b8',
+              font: { weight: '600' }
+            }
+          },
+          x: {
+            grid: { color: '#1e293b' },
+            ticks: { 
+              color: '#94a3b8',
+              font: { weight: '600' },
+              maxTicksLimit: 14
+            }
+          }
+        },
+        plugins: {
+          legend: { 
+            labels: { 
+              color: '#f8fafc',
+              font: { weight: '600' }
+            } 
+          }
+        }
+      }
+    });
+
+    function setTimeRange(range) {
+      activeRange = range;
+      syncRangeButtons();
+      if (rawTelemetryBundle) {
+        updateChartsWithRange(rawTelemetryBundle);
+      }
+    }
+
+    function syncRangeButtons() {
+      var buttons = document.querySelectorAll("#tempRangeSelector .range-btn");
+      buttons.forEach(function(btn) {
+        btn.classList.toggle("active", btn.textContent.toLowerCase() === activeRange.toLowerCase());
+      });
+    }
+
+    window.setTimeRange = setTimeRange;
+
+    function updateChartsWithRange(data) {
+      if (!data || !data.labels || !data.labels.length) return;
+
+      var total = data.labels.length;
+      var startIdx = 0;
+
+      // Filter dataset strictly by time window based on sample timestamps
+      // 1d = strictly last 24h, 1h = strictly last 60m, 1w = strictly last 7 days
+      if (activeRange !== "all" && data.fullTimestamps && data.fullTimestamps.length > 0) {
+        var lastTsStr = data.fullTimestamps[data.fullTimestamps.length - 1];
+        var latestMs = parseTsToMs(lastTsStr);
+        if (!latestMs) latestMs = Date.now();
+
+        var windowMs = 24 * 3600 * 1000; // 1d default
+        if (activeRange === "1h") windowMs = 1 * 3600 * 1000;
+        else if (activeRange === "1d") windowMs = 24 * 3600 * 1000;
+        else if (activeRange === "1w") windowMs = 7 * 24 * 3600 * 1000;
+
+        var cutoffMs = latestMs - windowMs;
+        startIdx = total;
+        for (var i = 0; i < data.fullTimestamps.length; i++) {
+          var sMs = parseTsToMs(data.fullTimestamps[i]);
+          if (sMs >= cutoffMs) {
+            startIdx = i;
+            break;
+          }
+        }
+        if (startIdx >= total) {
+          startIdx = Math.max(0, total - 1);
+        }
+      } else {
+        startIdx = 0;
+      }
+
+      var slicedLabels = data.labels.slice(startIdx);
+      var slicedFullTs = (data.fullTimestamps || data.labels).slice(startIdx);
+      var slicedOptic = (data.opticData || []).slice(startIdx);
+      var slicedCpu0 = (data.cpu0Data || []).slice(startIdx);
+      var slicedCpu1 = (data.cpu1Data || []).slice(startIdx);
+      var slicedPing = (data.pingData || []).slice(startIdx);
+
+      var unitSym = currentUnit === "F" ? "°F" : "°C";
+      var conv = function(arr) {
+        if (!arr) return [];
+        return currentUnit === "F" ? arr.map(function(v) { return Number(cToF(v).toFixed(1)); }) : arr;
+      };
+
+      var threshVal = currentUnit === "F" ? Number(cToF(currentThresholdC).toFixed(1)) : currentThresholdC;
+      var dualThreshLabel = formatDual(currentThresholdC);
+      var theme = getChartTheme();
+
+      // Update Temp Chart
+      if (window.tempChartInstance) {
+        window.tempChartInstance.data.labels = slicedLabels;
+        window.tempChartInstance.data.fullTimestamps = slicedFullTs;
+        window.tempChartInstance.data.datasets[0].label = "Laser Optic (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[0].data = conv(slicedOptic);
+
+        window.tempChartInstance.data.datasets[1].label = "CPU Core 0 (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[1].data = conv(slicedCpu0);
+
+        window.tempChartInstance.data.datasets[2].label = "CPU Core 1 (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[2].data = conv(slicedCpu1);
+
+        window.tempChartInstance.data.datasets[3].label = dualThreshLabel + " Trip Limit";
+        window.tempChartInstance.data.datasets[3].data = slicedLabels.map(function() { return threshVal; });
+
+        window.tempChartInstance.options.scales.y.min = currentUnit === "F" ? 95 : 35;
+        window.tempChartInstance.options.scales.y.max = currentUnit === "F" ? 195 : 90;
+        window.tempChartInstance.options.scales.y.grid.color = theme.grid;
+        window.tempChartInstance.options.scales.y.ticks.color = theme.ticks;
+        window.tempChartInstance.options.scales.x.grid.color = theme.xGrid;
+        window.tempChartInstance.options.scales.x.ticks.color = theme.ticks;
+        window.tempChartInstance.options.plugins.legend.labels.color = theme.legend;
+
+        window.tempChartInstance.update();
+      }
+
+      // Update Latency Chart
+      if (window.latencyChartInstance) {
+        window.latencyChartInstance.data.labels = slicedLabels;
+        window.latencyChartInstance.data.fullTimestamps = slicedFullTs;
+        window.latencyChartInstance.data.datasets[0].label = "Ping Latency (ms)";
+        window.latencyChartInstance.data.datasets[0].data = slicedPing;
+
+        window.latencyChartInstance.options.scales.y.grid.color = theme.grid;
+        window.latencyChartInstance.options.scales.y.ticks.color = theme.ticks;
+        window.latencyChartInstance.options.scales.x.grid.color = theme.xGrid;
+        window.latencyChartInstance.options.scales.x.ticks.color = theme.ticks;
+        window.latencyChartInstance.options.plugins.legend.labels.color = theme.legend;
+
+        window.latencyChartInstance.update();
+      }
+    }
+
+    window.renderDashboardWithData = function(data) {
+      try {
+        if (typeof data === "string") data = JSON.parse(data);
+        if (!data) return;
+
+        rawTelemetryBundle = data;
+
+        // Theme Handling
+        if (data.isLight !== undefined) {
+          isLightMode = !!data.isLight;
+          document.body.classList.toggle('light-theme', isLightMode);
+        }
+
+        // Unit Handling
+        if (data.tempUnit) {
+          currentUnit = (data.tempUnit === "F") ? "F" : "C";
+        }
+        if (data.threshold) currentThresholdC = Number(data.threshold);
+
+        if (data.latest) {
+          var s = data.latest;
+
+          // Optic Temp
+          var elOptic = document.getElementById("valOptic");
+          if (elOptic) elOptic.textContent = formatVal(s.optic_temp);
+          var elSubOptic = document.getElementById("subOptic");
+          if (elSubOptic) {
+            var dualCurrent = formatDual(s.optic_temp);
+            var dualSafeLimit = currentUnit === "F" ? "185.0 °F (85.0 °C)" : "85.0 °C (185.0 °F)";
+            elSubOptic.innerHTML = dualCurrent + " &bull; Safe Limit: " + dualSafeLimit;
+          }
+
+          // CPU Core 0
+          var elCpu0 = document.getElementById("valCpu0");
+          if (elCpu0) elCpu0.textContent = formatVal(s.cpu0_temp);
+          var elSubCpu0 = document.getElementById("subCpu0");
+          if (elSubCpu0) {
+            var dualCurrent = formatDual(s.cpu0_temp);
+            var dualAlertLimit = formatDual(currentThresholdC);
+            elSubCpu0.innerHTML = dualCurrent + " &bull; Alert: " + dualAlertLimit;
+          }
+
+          // Optical Rx & Tx
+          var elRx = document.getElementById("valRx");
+          if (elRx) elRx.textContent = (s.rx_power != null ? s.rx_power : "--") + " dBm";
+          var elSubRx = document.getElementById("subRx");
+          if (elSubRx) elSubRx.textContent = "Tx Power: " + (s.tx_power != null ? s.tx_power : "--") + " dBm";
+
+          // Ping
+          var elPing = document.getElementById("valPing");
+          if (elPing) elPing.textContent = (s.ping_ms != null ? s.ping_ms : "--") + " ms";
+          var elSubPing = document.getElementById("subPing");
+          var displayPingTarget = data.pingTarget || data.ping_target || s.ping_target || "8.8.8.8 (Google)";
+          if (elSubPing) elSubPing.textContent = "Target: " + displayPingTarget;
+
+          // Subtitle & Mode (Universal SFP+ indicator)
+          var subEl = document.getElementById("dashboardSubtitle");
+          if (subEl) {
+            var dev = data.deviceName || "Universal SFP+ Device";
+            var port = data.portName || "Port 7 SFP+";
+            var modeLabel = "Direct SSH";
+            if (data.mode === "win_server") modeLabel = "Windows Server (Desky • BETA)";
+            else if (data.mode === "mac_server") modeLabel = "macOS Server (BETA)";
+            else if (data.mode === "linux_server") modeLabel = "Linux Server (BETA)";
+            else if (data.mode === "offline") modeLabel = "Offline (Cached)";
+            else if (data.mode === "server") modeLabel = "Host Collector Daemon";
+            subEl.innerHTML = "Universal SFP+ / SFP28 &bull; " + dev + " &bull; " + port + " &bull; " + modeLabel;
+          }
+
+          // State Badge
+          var badgeState = document.getElementById("badgeState");
+          var dotState = document.getElementById("dotState");
+          var valPloam = document.getElementById("valPloam");
+          if (data.mode === "offline") {
+            if (badgeState) {
+              badgeState.style.background = isLightMode ? "#e2e8f0" : "#1e293b";
+              badgeState.style.color = isLightMode ? "#1e293b" : "#94a3b8";
+              badgeState.style.border = isLightMode ? "1px solid #cbd5e1" : "1px solid #334155";
+            }
+            if (dotState) dotState.style.background = isLightMode ? "#475569" : "#94a3b8";
+            if (valPloam) valPloam.textContent = "State " + (s.ploam || "O5.1") + " (Cached)";
+          } else {
+            if (badgeState) {
+              badgeState.style.background = isLightMode ? "#d1fae5" : "#065f46";
+              badgeState.style.color = isLightMode ? "#065f46" : "#34d399";
+              badgeState.style.border = "none";
+            }
+            if (dotState) dotState.style.background = isLightMode ? "#059669" : "#34d399";
+            if (valPloam) valPloam.textContent = "State " + (s.ploam || "O5.1") + " (Connected)";
+          }
+
+          // Sample Count Pill
+          var elBadge = document.getElementById("badgeSamples");
+          var srcTag = data.sourceLabel ? " &bull; " + data.sourceLabel : "";
+          if (elBadge) elBadge.innerHTML = (data.sampleCount || "") + " samples (" + (s.timestamp || "") + srcTag + ")";
+
+          // Latency Chart Title with clean formatted Domain Target (No double parentheses)
+          var elLatencyTitle = document.getElementById("latencyChartTitle");
+          if (elLatencyTitle) {
+            var rawTarget = data.pingTarget || data.ping_target || s.ping_target || "8.8.8.8 (Google)";
+            var cleanTarget = rawTarget.replace(/^\((.*)\)$/, '$1');
+            elLatencyTitle.textContent = "Internet Latency History \u2022 " + cleanTarget;
+          }
+        }
+
+        // Render charts respecting current active range
+        syncRangeButtons();
+        updateChartsWithRange(data);
+      } catch (err) {
+        console.error("renderDashboardWithData error:", err);
+      }
+    };
+
+    // Controls for standalone desktop/server web browsers (Windows, Mac, Linux)
+    function toggleWebTheme() {
+      isLightMode = !isLightMode;
+      document.body.classList.toggle('light-theme', isLightMode);
+      localStorage.setItem("hotboi_theme", isLightMode ? "light" : "dark");
+      var btn = document.getElementById("btnWebTheme");
+      if (btn) btn.innerHTML = isLightMode ? "☀️ Light" : "🌙 Dark";
+      if (rawTelemetryBundle) {
+        rawTelemetryBundle.isLight = isLightMode;
+        window.renderDashboardWithData(rawTelemetryBundle);
+      }
+    }
+
+    function toggleWebUnit() {
+      currentUnit = (currentUnit === "C") ? "F" : "C";
+      localStorage.setItem("hotboi_unit", currentUnit);
+      var btn = document.getElementById("btnWebUnit");
+      if (btn) btn.innerHTML = (currentUnit === "F") ? "°F" : "°C";
+      if (rawTelemetryBundle) {
+        rawTelemetryBundle.tempUnit = currentUnit;
+        window.renderDashboardWithData(rawTelemetryBundle);
+      }
+    }
+
+    function manualWebRefresh() {
+      autoPollServer();
+    }
+
+    // Auto-fetch polling for Web Browsers (when loaded at http://localhost:8080 or Windows/Mac server)
+    async function autoPollServer() {
+      try {
+        var res = await fetch('/api/history');
+        if (res.ok) {
+          var historyBundle = await res.json();
+          window.renderDashboardWithData(historyBundle);
+          return;
+        }
+      } catch (e) {}
+
+      try {
+        var resSingle = await fetch('/api/telemetry');
+        if (resSingle.ok) {
+          var single = await resSingle.json();
+          window.renderDashboardWithData({
+            latest: single,
+            sampleCount: 1,
+            labels: [single.timestamp ? single.timestamp.split(" ")[1] : "Now"],
+            fullTimestamps: [single.timestamp || ""],
+            opticData: [single.optic_temp],
+            cpu0Data: [single.cpu0_temp],
+            cpu1Data: [single.cpu1_temp],
+            pingData: [single.ping_ms],
+            pingTarget: single.ping_target || "8.8.8.8 (Google)",
+            mode: "server"
+          });
+        }
+      } catch (e) {}
+    }
+
+    // Initialize standalone desktop browser settings & polling
+    if (window.location.protocol.indexOf("http") === 0) {
+      var savedTheme = localStorage.getItem("hotboi_theme");
+      if (savedTheme === "light" || (!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+        isLightMode = true;
+        document.body.classList.add('light-theme');
+      } else {
+        isLightMode = false;
+        document.body.classList.remove('light-theme');
+      }
+      var themeBtn = document.getElementById("btnWebTheme");
+      if (themeBtn) themeBtn.innerHTML = isLightMode ? "☀️ Light" : "🌙 Dark";
+
+      var savedUnit = localStorage.getItem("hotboi_unit");
+      if (savedUnit === "F" || savedUnit === "C") {
+        currentUnit = savedUnit;
+      }
+      var unitBtn = document.getElementById("btnWebUnit");
+      if (unitBtn) unitBtn.innerHTML = (currentUnit === "F") ? "°F" : "°C";
+
+      var nav = document.getElementById("standaloneWebNav");
+      if (nav) nav.style.display = "flex";
+
+      autoPollServer();
+      setInterval(autoPollServer, 8000);
+    }
+  </script>
+</body>
+</html>

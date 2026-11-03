@@ -1,0 +1,573 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/card_bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Settings &amp; Setup"
+            android:textColor="@color/primary_cyan"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Universal SFP+ / SFP28 Optical &amp; Gateway Diagnostics. Compatible with UniFi, MikroTik, Cisco, Mellanox, and Generic Transceivers."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <!-- 1. HARDWARE & INTERFACE -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="HARDWARE &amp; SFP+ PORT"
+            android:textColor="@color/accent_emerald"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Device Label"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etDeviceName"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@drawable/badge_bg"
+            android:hint="UniFi Cloud Gateway Fiber (White Bean)"
+            android:paddingHorizontal="12dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="SFP+ Optical Port Interface"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <Spinner
+            android:id="@+id/spSfpInterface"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@drawable/badge_bg" />
+
+        <EditText
+            android:id="@+id/etCustomSfp"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/badge_bg"
+            android:hint="Custom interface name (e.g. eth8, sfp1)"
+            android:paddingHorizontal="12dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- 2. DATA COLLECTION METHOD -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="14dp"
+            android:background="@color/card_border" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DATA COLLECTION METHOD"
+            android:textColor="@color/accent_emerald"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <RadioGroup
+            android:id="@+id/rgCollectionMethod"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp">
+
+            <RadioButton
+                android:id="@+id/rbModeDirectSsh"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="⚡ Direct SSH (Standalone from Phone)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbModeMacServer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🍏 macOS Server (BETA)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbModeWinServer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🪟 Windows Server (BETA)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbModeLinuxServer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🐧 Linux Server (Debian / Ubuntu • BETA)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbModeOffline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="💾 Offline / Cached Telemetry Only"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+        </RadioGroup>
+
+        <!-- Direct SSH Configuration Section -->
+        <LinearLayout
+            android:id="@+id/sectionSshSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="12dp"
+                android:background="@color/card_border" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="GATEWAY CONNECTION &amp; AUTH"
+                android:textColor="@color/accent_emerald"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etHost"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="3"
+                    android:background="@drawable/badge_bg"
+                    android:hint="192.168.0.254"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etPort"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/badge_bg"
+                    android:hint="22"
+                    android:inputType="number"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etUser"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/badge_bg"
+                    android:hint="root"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etPassword"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1.5"
+                    android:background="@drawable/badge_bg"
+                    android:hint="SSH Password (optional)"
+                    android:inputType="textPassword"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="SSH Private Key (ed25519 / RSA)"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/etSshKey"
+                android:layout_width="match_parent"
+                android:layout_height="70dp"
+                android:background="@drawable/badge_bg"
+                android:fontFamily="monospace"
+                android:gravity="top|start"
+                android:hint="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+                android:padding="10dp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_muted"
+                android:textSize="10sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="end"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnLoadMacKey"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="🔑 Load Authorized Key"
+                    android:textColor="@color/primary_cyan"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Ping Latency Target (IP / Hostname)"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/spPingTarget"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/badge_bg" />
+
+            <EditText
+                android:id="@+id/etCustomPingTarget"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/badge_bg"
+                android:hint="Custom target (e.g. 1.0.0.1, google.com)"
+                android:paddingHorizontal="12dp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_muted"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnTestConnection"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="10dp"
+                android:text="🔍 Test Connection"
+                android:textColor="@color/accent_emerald"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Remote Server Configuration Section -->
+        <LinearLayout
+            android:id="@+id/sectionServerSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="12dp"
+                android:background="@color/card_border" />
+
+            <TextView
+                android:id="@+id/tvServerSectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MACOS SERVER ENDPOINT (BETA)"
+                android:textColor="@color/accent_emerald"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/etServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/badge_bg"
+                android:hint="http://192.168.0.134:8080"
+                android:inputType="textUri"
+                android:paddingHorizontal="12dp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_muted"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvServerBetaNote"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="⭐ BETA FEATURE: Connect to HotBoi collector running on your computer. Future premium feature."
+                android:textColor="@color/text_beta"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 3. BACKGROUND AUTOMATION & ALERTS -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="14dp"
+            android:background="@color/card_border" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BACKGROUND AUTOMATION &amp; ALERTS"
+            android:textColor="@color/accent_emerald"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <CheckBox
+            android:id="@+id/cbBackgroundSync"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:checked="true"
+            android:text="Collect in background automatically"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/layoutInterval"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Background Interval:"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <Spinner
+                android:id="@+id/spInterval"
+                android:layout_width="160dp"
+                android:layout_height="40dp"
+                android:background="@drawable/badge_bg" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Thermal Trip Threshold:"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etThreshold"
+                android:layout_width="70dp"
+                android:layout_height="40dp"
+                android:background="@drawable/badge_bg"
+                android:gravity="center"
+                android:hint="79"
+                android:inputType="numberDecimal"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvThresholdUnit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="°C"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvThresholdConverted"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="(≈ 174.2 °F)"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp" />
+
+            <!-- Circular (i) info button -->
+            <TextView
+                android:id="@+id/btnThresholdInfo"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/circle_info_bg"
+                android:gravity="center"
+                android:text="ℹ"
+                android:textColor="@color/primary_cyan"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/btnTestNotification"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/badge_bg"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:text="🔔 Send Test Push Notification"
+            android:textColor="@color/primary_cyan"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <!-- 4. APPEARANCE & DISPLAY -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="14dp"
+            android:background="@color/card_border" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="APPEARANCE &amp; UNITS"
+            android:textColor="@color/accent_emerald"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Temperature Unit"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/rgTempUnit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rbUnitCelsius"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="Celsius (°C)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbUnitFahrenheit"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Fahrenheit (°F)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+        </RadioGroup>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Theme Mode"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/rgThemeMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbThemeSystem"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="⚙️ System Default"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbThemeLight"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="☀️ Light Mode"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <RadioButton
+                android:id="@+id/rbThemeDark"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🌙 Dark Mode"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+        </RadioGroup>
+
+    </LinearLayout>
+</ScrollView>
