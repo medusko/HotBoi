@@ -1,0 +1,56 @@
+name: Release Beta APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Beta APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant Execute Permission to gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare Release Asset
+        run: |
+          mkdir -p release_dist
+          cp app/build/outputs/apk/debug/app-debug.apk release_dist/HotBoi-beta.apk
+
+      - name: Create Beta Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "HotBoi Beta ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          prerelease: true
+          draft: false
+          files: release_dist/HotBoi-beta.apk
+          body: |
+            ## 🔥 HotBoi Beta Release
+
+            Standalone native Android companion application and telemetry monitor for your UniFi Cloud Gateway and XGS-PON SFP+ optical transceiver.
+
+            ### 📱 Download
+            - **APK Asset**: [HotBoi-beta.apk](HotBoi-beta.apk)
+            - **Target SDK**: Android 15 (API 35)
+            - **Minimum SDK**: Android 8.0 (API 26)
+            - **Package**: `com.zlatty.hotboi.debug`
