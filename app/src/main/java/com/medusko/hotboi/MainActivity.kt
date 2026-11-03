@@ -1,4 +1,4 @@
-package com.zlatty.hotboi
+package com.medusko.hotboi
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -44,7 +44,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.Gson
-import com.zlatty.hotboi.databinding.ActivityMainBinding
+import com.medusko.hotboi.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

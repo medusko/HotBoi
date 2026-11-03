@@ -3,7 +3,7 @@ set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${HOME}/.hotboi"
-PLIST_PATH="${HOME}/Library/LaunchAgents/com.zlatty.hotboi.plist"
+PLIST_PATH="${HOME}/Library/LaunchAgents/com.medusko.hotboi.plist"
 
 echo "Installing HotBoi macOS Collector Service..."
 mkdir -p "${TARGET_DIR}"
@@ -17,7 +17,7 @@ cat <<EOF > "${PLIST_PATH}"
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.zlatty.hotboi</string>
+    <string>com.medusko.hotboi</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
