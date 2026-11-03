@@ -1,5 +1,4 @@
-# 🔥 HotBoi — XGS-PON SFP+ Thermal Monitor (`com.zlatty.hotboi`)
-
+# HotBoi — XGS-PON SFP+ Thermal Monitor 
 Standalone Native Android companion application and telemetry monitor for your UniFi Cloud Gateway (White Bean) and XGS-PON SFP+ optical stick transceiver.
 
 ---
