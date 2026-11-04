@@ -8,7 +8,7 @@
 
 All updates and release notes are documented in our [**CHANGELOG.md**](CHANGELOG.md):
 
-- 📱 **[Download HotBoi for Android (`HotBoi-Android-v1.0.0-RC1.apk`)](HotBoi-Android-v1.0.0-RC1.apk)** *(Latest Release Candidate — 5.0 MB R8 minified, dedicated About & Diagnostics screen, 1-tap quick theme toggle, screen-off battery awareness, tactile haptics)*
+- 📱 **[Download HotBoi for Android (`HotBoi-Android-v1.0.0-RC1.apk`)](https://github.com/medusko/HotBoi/releases/tag/v1.0.0-RC1)** *(Latest Release Candidate — 5.0 MB R8 minified, dedicated About & Diagnostics screen, 1-tap quick theme toggle, screen-off battery awareness, tactile haptics)*
 - 📋 **[View Full Changelog & Release Notes](CHANGELOG.md)**
 
 ---
