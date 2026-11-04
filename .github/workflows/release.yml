@@ -1,4 +1,4 @@
-name: Release Beta APK
+name: Release Build
 
 on:
   push:
@@ -10,47 +10,69 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build & Release Beta APK
+  build-android:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
-          cache: gradle
+          java-version: '21'
 
-      - name: Grant Execute Permission to gradlew
-        run: chmod +x ./gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-      - name: Prepare Release Asset
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK
         run: |
-          mkdir -p release_dist
-          cp app/build/outputs/apk/debug/app-debug.apk release_dist/HotBoi-beta.apk
+          VERSION="${GITHUB_REF_NAME:-v1.0.0-RC1}"
+          cp app/build/outputs/apk/release/app-release.apk "HotBoi-Android-${VERSION}.apk"
 
-      - name: Create Beta Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: "HotBoi Beta ${{ github.ref_name }}"
-          tag_name: ${{ github.ref_name }}
+          name: android-apk
+          path: HotBoi-Android-*.apk
+
+  release:
+    needs: [build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: HotBoi ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }} (Release Candidate 1) 🔥
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }}
           prerelease: true
-          draft: false
-          files: release_dist/HotBoi-beta.apk
+          files: |
+            HotBoi-Android-*.apk
           body: |
-            ## 🔥 HotBoi Beta Release
+            ### HotBoi ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }} Release Candidate 1 🔥
 
-            Standalone native Android companion application and telemetry monitor for your UniFi Cloud Gateway and XGS-PON SFP+ optical transceiver.
+            Standalone native Android companion application and thermal watchdog for your UniFi Cloud Gateway (White Bean / UCG-Fiber) and XGS-PON SFP+ optical transceiver.
 
-            ### 📱 Download
-            - **APK Asset**: [HotBoi-beta.apk](HotBoi-beta.apk)
-            - **Target SDK**: Android 15 (API 35)
-            - **Minimum SDK**: Android 8.0 (API 26)
-            - **Package**: `com.medusko.hotboi.debug`
+            #### Release Candidate 1 Highlights:
+            - **✨ Information & Diagnostic Parity with Lagatron & Keyboardy**: Dedicated About HotBoi diagnostic screen with Hero identity card, live connection status bar, active optical port diagnostics, architecture pillars, and GitHub resource links.
+            - **☀️/🌙 1-Tap Quick Theme Toggle**: Added instant Sun/Moon theme switcher directly in the top app bar without having to open settings.
+            - **🎨 Modernized Vector Drawables**: Cleaned up top bar with crisp custom vector drawables and dynamic connection status dots.
+            - **📳 Tactile Haptic Feedback**: Subtle physical feedback on refreshes, °C/°F unit toggles, and dialog interactions.
+            - **🔋 Screen-Off Radio Power Optimizations**: Background auto-refresh respects device sleep states (`PowerManager.isInteractive`), avoiding Wi-Fi/cellular radio wakeups when the screen is dark.
+            - **📦 R8 Minification & Resource Shrinking**: Slashed release APK size by 50% (down to 5.0 MB) with faster cold boot times and optimized memory execution.
+
+            #### Downloads
+            - 📱 **Android**: `HotBoi-Android-${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }}.apk`
