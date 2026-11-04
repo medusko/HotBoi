@@ -2,20 +2,33 @@ package com.medusko.hotboi
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import android.view.Window
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -27,9 +40,11 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
@@ -67,8 +82,11 @@ import java.util.Locale
  *    - Linux Server Daemon for Debian / Ubuntu (BETA).
  *    - Offline Cached Telemetry (Room / SQLite local history).
  * 4. Dual Temperature Units: Instant one-tap conversion between Celsius (°C) and Fahrenheit (°F).
- * 5. Full Theme Engine: System Default, Light Mode, and Dark Mode with dynamic chart styling.
+ * 5. Full Theme Engine: Instant top-bar toggle between Light Mode and Dark Mode.
  * 6. High-Priority Push Alerts: Push notification upon crossing thermal trip limit.
+ * 7. About HotBoi Diagnostic & Information Screen matching Lagatron and Keyboardy design systems.
+ * 8. Screen-Off & Radio Power Optimizations: Automatically skips background polling when screen is sleeping.
+ * 9. Physical tactile haptic feedback across interactive navigation actions.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -96,10 +114,15 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Periodic foreground auto-refresh runnable executing every 60 seconds.
+     * Screen & radio power aware: Skips network polling when device screen is turned off.
      */
     private val autoRefreshRunnable = object : Runnable {
         override fun run() {
-            triggerDataRefresh(isSilent = true)
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val isScreenActive = powerManager?.isInteractive ?: true
+            if (isScreenActive) {
+                triggerDataRefresh(isSilent = true)
+            }
             refreshHandler.postDelayed(this, AUTO_REFRESH_INTERVAL_MS)
         }
     }
@@ -121,6 +144,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupWebView()
         setupListeners()
+        updateThemeIcon()
 
         // Load local asset dashboard
         binding.webView.loadUrl(LOCAL_URL)
@@ -242,6 +266,76 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Converts density-independent pixels to device pixels.
+     */
+    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
+
+    /**
+     * Creates a rounded corner GradientDrawable with optional border stroke.
+     */
+    private fun createRoundedDrawable(
+        fillColor: Int,
+        cornerRadiusPx: Float,
+        strokeWidthPx: Int = 0,
+        strokeColor: Int = Color.TRANSPARENT
+    ): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(fillColor)
+            cornerRadius = cornerRadiusPx
+            if (strokeWidthPx > 0) {
+                setStroke(strokeWidthPx, strokeColor)
+            }
+        }
+    }
+
+    /**
+     * Determines whether dark / night mode is actively rendered.
+     */
+    private fun isNightModeActive(): Boolean {
+        val themeMode = prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM)
+        return when (themeMode) {
+            SshCollector.THEME_DARK -> true
+            SshCollector.THEME_LIGHT -> false
+            else -> {
+                val nightFlags = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                nightFlags == Configuration.UI_MODE_NIGHT_YES
+            }
+        }
+    }
+
+    /**
+     * Updates top-bar theme toggle button icon to reflect current UI state (Sun in Dark, Moon in Light).
+     */
+    private fun updateThemeIcon() {
+        val isNight = isNightModeActive()
+        binding.ivThemeIcon.setImageResource(
+            if (isNight) R.drawable.ic_light_mode else R.drawable.ic_dark_mode
+        )
+    }
+
+    /**
+     * 1-Tap quick toggle between Dark Mode and Light Mode with instant visual feedback.
+     */
+    private fun toggleTheme() {
+        val isNight = isNightModeActive()
+        val newTheme = if (isNight) SshCollector.THEME_LIGHT else SshCollector.THEME_DARK
+        prefs.edit().putString(SshCollector.KEY_THEME_MODE, newTheme).apply()
+
+        when (newTheme) {
+            SshCollector.THEME_LIGHT -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            SshCollector.THEME_DARK -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        }
+        updateThemeIcon()
+        injectTelemetryIntoWebView()
+        Toast.makeText(
+            this,
+            if (newTheme == SshCollector.THEME_DARK) "Dark Mode activated" else "Light Mode activated",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    /**
      * Updates top-bar toggle button label to reflect active temperature unit (°C or °F).
      */
     private fun updateUnitButtonLabel() {
@@ -254,9 +348,11 @@ class MainActivity : AppCompatActivity() {
      */
     private fun setupListeners() {
         updateUnitButtonLabel()
+        updateThemeIcon()
 
         // One-tap quick toggle between Celsius and Fahrenheit
         binding.btnUnitToggle.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val current = prefs.getString(SshCollector.KEY_TEMP_UNIT, SshCollector.UNIT_CELSIUS) ?: SshCollector.UNIT_CELSIUS
             val newUnit = if (current == SshCollector.UNIT_CELSIUS) SshCollector.UNIT_FAHRENHEIT else SshCollector.UNIT_CELSIUS
             prefs.edit().putString(SshCollector.KEY_TEMP_UNIT, newUnit).apply()
@@ -266,24 +362,41 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
 
+        // About HotBoi Dialog trigger (parity with Keyboardy & Lagatron)
+        binding.btnAbout.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            showAboutHotBoiDialog()
+        }
+
+        // 1-Tap quick Light / Dark Theme Toggle (Sun in Dark, Moon in Light)
+        binding.btnThemeToggle.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            toggleTheme()
+        }
+
         binding.swipeRefresh.setOnRefreshListener {
+            binding.swipeRefresh.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             triggerDataRefresh(isSilent = false)
         }
 
         binding.btnRefresh.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             binding.swipeRefresh.isRefreshing = true
             triggerDataRefresh(isSilent = false)
         }
 
         binding.btnSettings.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             showSettingsDialog(isFirstLaunch = false)
         }
 
         binding.btnErrorLog.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             showErrorDetailsDialog()
         }
 
         binding.tvStatus.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             showErrorDetailsDialog()
         }
     }
@@ -320,132 +433,128 @@ class MainActivity : AppCompatActivity() {
                         if (result.isSuccess) {
                             val sample = result.getOrThrow()
                             TelemetryRepository.addSample(this@MainActivity, sample, SshCollector.MODE_SSH)
-                            NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
                             injectTelemetryIntoWebView()
+                            NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
 
                             binding.btnErrorLog.visibility = View.GONE
-                            binding.tvStatus.text = "🟢 Direct ($host)"
+                            binding.tvStatus.text = "⚡ Direct SSH"
                             binding.tvStatus.setTextColor(Color.parseColor("#34D399"))
                         } else {
-                            injectTelemetryIntoWebView()
+                            val err = result.exceptionOrNull()
+                            val msg = err?.message ?: "Unknown SSH Error"
+                            ErrorLogManager.logError("SSH Direct Probe ($host)", err ?: Exception(msg))
+
                             binding.btnErrorLog.visibility = View.VISIBLE
-                            binding.tvStatus.text = "⚠️ Error (Tap to view)"
-                            binding.tvStatus.setTextColor(Color.parseColor("#F87171"))
+                            binding.tvStatus.text = "Error (SSH)"
+                            binding.tvStatus.setTextColor(Color.parseColor("#EF4444"))
+
+                            if (!isSilent) {
+                                showErrorDetailsDialog()
+                            }
                         }
                     }
                 }
             }
-            SshCollector.MODE_MAC_SERVER, SshCollector.MODE_WIN_SERVER, SshCollector.MODE_LINUX_SERVER, SshCollector.MODE_SERVER -> {
-                val (defaultUrl, osLabel) = when (mode) {
-                    SshCollector.MODE_WIN_SERVER -> Pair(SshCollector.DEFAULT_WIN_SERVER_URL, "Windows (BETA)")
-                    SshCollector.MODE_LINUX_SERVER -> Pair(SshCollector.DEFAULT_LINUX_SERVER_URL, "Linux (BETA)")
-                    SshCollector.MODE_MAC_SERVER -> Pair(SshCollector.DEFAULT_MAC_SERVER_URL, "macOS (BETA)")
-                    else -> Pair(SshCollector.DEFAULT_SERVER_URL, "Server (BETA)")
-                }
 
+            SshCollector.MODE_MAC_SERVER, SshCollector.MODE_WIN_SERVER, SshCollector.MODE_LINUX_SERVER, SshCollector.MODE_SERVER -> {
+                val serverName = when (mode) {
+                    SshCollector.MODE_MAC_SERVER -> "macOS Server"
+                    SshCollector.MODE_WIN_SERVER -> "Windows Server"
+                    SshCollector.MODE_LINUX_SERVER -> "Linux Server"
+                    else -> "Server"
+                }
+                val serverIcon = when (mode) {
+                    SshCollector.MODE_MAC_SERVER -> "🍏"
+                    SshCollector.MODE_WIN_SERVER -> "🪟"
+                    SshCollector.MODE_LINUX_SERVER -> "🐧"
+                    else -> "🖥️"
+                }
                 val prefKey = when (mode) {
                     SshCollector.MODE_WIN_SERVER -> SshCollector.KEY_WIN_SERVER_URL
                     SshCollector.MODE_LINUX_SERVER -> SshCollector.KEY_LINUX_SERVER_URL
                     SshCollector.MODE_MAC_SERVER -> SshCollector.KEY_MAC_SERVER_URL
                     else -> SshCollector.KEY_SERVER_URL
                 }
+                val defaultUrl = when (mode) {
+                    SshCollector.MODE_WIN_SERVER -> SshCollector.DEFAULT_WIN_SERVER_URL
+                    SshCollector.MODE_LINUX_SERVER -> SshCollector.DEFAULT_LINUX_SERVER_URL
+                    SshCollector.MODE_MAC_SERVER -> SshCollector.DEFAULT_MAC_SERVER_URL
+                    else -> SshCollector.DEFAULT_SERVER_URL
+                }
 
-                val serverUrl = prefs.getString(prefKey, defaultUrl) ?: defaultUrl
+                val serverUrl = prefs.getString(prefKey, defaultUrl)?.trim() ?: defaultUrl
 
                 lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         val base = serverUrl.trimEnd('/')
-                        // First attempt to fetch full telemetry history from the server
-                        var parsedSamples: List<TelemetrySample>? = null
-                        var latestSample: TelemetrySample? = null
-                        var serverPing: String? = null
-
-                        try {
-                            val historyUrl = URL("$base/api/history")
-                            val hConn = (historyUrl.openConnection() as HttpURLConnection).apply {
-                                connectTimeout = 4000
-                                readTimeout = 4000
-                                requestMethod = "GET"
-                            }
-                            if (hConn.responseCode == 200) {
-                                val hJson = hConn.inputStream.bufferedReader().readText()
-                                val jsonObject = com.google.gson.JsonParser.parseString(hJson).asJsonObject
-                                if (jsonObject.has("samples") && jsonObject.get("samples").isJsonArray) {
-                                    val listType = object : com.google.gson.reflect.TypeToken<List<TelemetrySample>>() {}.type
-                                    parsedSamples = Gson().fromJson(jsonObject.get("samples"), listType)
-                                }
-                                if (jsonObject.has("latest") && jsonObject.get("latest").isJsonObject) {
-                                    latestSample = Gson().fromJson(jsonObject.get("latest"), TelemetrySample::class.java)
-                                }
-                                if (jsonObject.has("ping_target")) {
-                                    serverPing = jsonObject.get("ping_target").asString
-                                } else if (jsonObject.has("pingTarget")) {
-                                    serverPing = jsonObject.get("pingTarget").asString
-                                }
-                            }
-                        } catch (_: Exception) {}
-
-                        // Fallback to /api/telemetry if /api/history wasn't returned
-                        if (latestSample == null) {
-                            val singleUrl = URL("$base/api/telemetry")
-                            val sConn = (singleUrl.openConnection() as HttpURLConnection).apply {
-                                connectTimeout = 4000
-                                readTimeout = 4000
-                                requestMethod = "GET"
-                            }
-                            if (sConn.responseCode == 200) {
-                                val sJson = sConn.inputStream.bufferedReader().readText()
-                                latestSample = Gson().fromJson(sJson, TelemetrySample::class.java)
-                                val jsonObject = com.google.gson.JsonParser.parseString(sJson).asJsonObject
-                                if (serverPing == null && jsonObject.has("ping_target")) {
-                                    serverPing = jsonObject.get("ping_target").asString
-                                }
-                            } else {
-                                throw Exception("HTTP Error: ${sConn.responseCode} ${sConn.responseMessage}")
-                            }
+                        val endpoint = if (base.endsWith("/api/telemetry")) base else "$base/api/telemetry"
+                        val url = URL(endpoint)
+                        val conn = (url.openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 4000
+                            readTimeout = 4000
                         }
 
-                        if (parsedSamples != null && parsedSamples.isNotEmpty()) {
-                            TelemetryRepository.setSamples(this@MainActivity, parsedSamples, mode)
-                        } else if (latestSample != null) {
-                            TelemetryRepository.addSample(this@MainActivity, latestSample, mode)
-                        }
+                        if (conn.responseCode == 200) {
+                            val json = conn.inputStream.bufferedReader().readText()
+                            val sample = Gson().fromJson(json, TelemetrySample::class.java)
 
-                        if (latestSample != null) {
-                            NotificationHelper.checkThresholdAndAlert(this@MainActivity, latestSample)
-                        }
+                            if (sample != null) {
+                                TelemetryRepository.addSample(this@MainActivity, sample, mode)
+                                withContext(Dispatchers.Main) {
+                                    binding.progressBar.visibility = View.GONE
+                                    binding.swipeRefresh.isRefreshing = false
+                                    injectTelemetryIntoWebView()
+                                    NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
 
-                        // Inspect ping target mismatch and prompt user to synchronize if different
-                        val appPing = prefs.getString(SshCollector.KEY_PING_TARGET, "1.1.1.1") ?: "1.1.1.1"
-                        if (!hasPromptedPingMismatch && !serverPing.isNullOrBlank() &&
-                            !serverPing.contains(appPing) && !appPing.contains(serverPing)) {
-                            hasPromptedPingMismatch = true
-                            withContext(Dispatchers.Main) {
-                                showPingTargetMismatchDialog(base, osLabel, serverPing, appPing)
+                                    binding.btnErrorLog.visibility = View.GONE
+                                    binding.tvStatus.text = "$serverIcon $serverName"
+                                    binding.tvStatus.setTextColor(Color.parseColor("#34D399"))
+                                }
+
+                                // Check ping target parity with server
+                                if (!hasPromptedPingMismatch) {
+                                    try {
+                                        val configUrl = URL("$base/api/config")
+                                        val configConn = (configUrl.openConnection() as HttpURLConnection).apply {
+                                            connectTimeout = 2000
+                                            readTimeout = 2000
+                                        }
+                                        if (configConn.responseCode == 200) {
+                                            val configJson = configConn.inputStream.bufferedReader().readText()
+                                            val serverObj = org.json.JSONObject(configJson)
+                                            val serverPing = serverObj.optString("ping_target", "")
+                                            val appPing = prefs.getString(SshCollector.KEY_PING_TARGET, SshCollector.DEFAULT_PING_TARGET) ?: SshCollector.DEFAULT_PING_TARGET
+
+                                            if (serverPing.isNotEmpty() && serverPing != appPing) {
+                                                withContext(Dispatchers.Main) {
+                                                    hasPromptedPingMismatch = true
+                                                    showPingTargetMismatchDialog(base, serverName, serverPing, appPing)
+                                                }
+                                            }
+                                        }
+                                    } catch (_: Exception) {}
+                                }
                             }
-                        }
-
-                        withContext(Dispatchers.Main) {
-                            binding.progressBar.visibility = View.GONE
-                            binding.swipeRefresh.isRefreshing = false
-                            binding.btnErrorLog.visibility = View.GONE
-                            binding.tvStatus.text = "🟢 $osLabel"
-                            binding.tvStatus.setTextColor(Color.parseColor("#38BDF8"))
-                            injectTelemetryIntoWebView()
+                        } else {
+                            throw Exception("HTTP ${conn.responseCode}: ${conn.responseMessage}")
                         }
                     } catch (e: Exception) {
-                        ErrorLogManager.logError("$osLabel Error ($serverUrl)", e)
+                        ErrorLogManager.logError("$serverName Probe ($serverUrl)", e)
                         withContext(Dispatchers.Main) {
                             binding.progressBar.visibility = View.GONE
                             binding.swipeRefresh.isRefreshing = false
                             binding.btnErrorLog.visibility = View.VISIBLE
-                            binding.tvStatus.text = "⚠️ $osLabel Error"
-                            binding.tvStatus.setTextColor(Color.parseColor("#F87171"))
-                            injectTelemetryIntoWebView()
+                            binding.tvStatus.text = "Error ($serverName)"
+                            binding.tvStatus.setTextColor(Color.parseColor("#EF4444"))
+
+                            if (!isSilent) {
+                                showErrorDetailsDialog()
+                            }
                         }
                     }
                 }
             }
+
             else -> {
                 // Offline mode: zero network calls, read entirely from local room database
                 injectTelemetryIntoWebView()
@@ -516,6 +625,402 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Displays the "About HotBoi" dialog matching Lagatron & Keyboardy's exact design system,
+     * featuring hero identity, live diagnostic telemetry, architecture pillars, release notes, and GitHub links.
+     */
+    private fun showAboutHotBoiDialog() {
+        val density = resources.displayMetrics.density
+        val strokePx = (1f * density).toInt().coerceAtLeast(1)
+
+        val cardBg = ContextCompat.getColor(this, R.color.card_bg)
+        val cardBorder = ContextCompat.getColor(this, R.color.card_border)
+        val textPrimary = ContextCompat.getColor(this, R.color.text_primary)
+        val textSecondary = ContextCompat.getColor(this, R.color.text_secondary)
+        val textMuted = ContextCompat.getColor(this, R.color.text_muted)
+        val brandRed = ContextCompat.getColor(this, R.color.hotboi_brand)
+        val cyan = ContextCompat.getColor(this, R.color.primary_cyan)
+        val emerald = ContextCompat.getColor(this, R.color.accent_emerald)
+        val bgDark = ContextCompat.getColor(this, R.color.bg_dark)
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(20), dpToPx(18), dpToPx(20), dpToPx(16))
+            background = createRoundedDrawable(
+                fillColor = cardBg,
+                cornerRadiusPx = 20f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+        }
+
+        // 1. HERO IDENTITY CARD
+        val heroCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12))
+            background = createRoundedDrawable(
+                fillColor = bgDark,
+                cornerRadiusPx = 14f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+        }
+
+        val heroTopRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val appIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_foreground)
+            background = createRoundedDrawable(
+                fillColor = cardBg,
+                cornerRadiusPx = 10f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44)).apply {
+                marginEnd = dpToPx(12)
+            }
+        }
+        heroTopRow.addView(appIcon)
+
+        val heroTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val tvAppName = TextView(this).apply {
+            text = "HotBoi"
+            setTextColor(brandRed)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.02f
+        }
+        heroTextCol.addView(tvAppName)
+
+        val tvAppSubtitle = TextView(this).apply {
+            text = "Universal SFP+ Optical Telemetry"
+            setTextColor(textSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        }
+        heroTextCol.addView(tvAppSubtitle)
+        heroTopRow.addView(heroTextCol)
+
+        // Version Chip
+        val vName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0-RC1"
+        } catch (_: Exception) {
+            "1.0.0-RC1"
+        }
+
+        val versionCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+        }
+        val versionPill = TextView(this).apply {
+            text = "v$vName"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.MONOSPACE
+            setPadding(dpToPx(7), dpToPx(3), dpToPx(7), dpToPx(3))
+            background = createRoundedDrawable(
+                fillColor = cardBg,
+                cornerRadiusPx = 6f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+        }
+        versionCol.addView(versionPill)
+
+        val buildLabel = TextView(this).apply {
+            text = "Build 2"
+            setTextColor(textMuted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dpToPx(2), dpToPx(2), 0)
+        }
+        versionCol.addView(buildLabel)
+        heroTopRow.addView(versionCol)
+        heroCard.addView(heroTopRow)
+
+        // Divider inside Hero
+        val heroDivider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, strokePx).apply {
+                setMargins(0, dpToPx(10), 0, dpToPx(10))
+            }
+            setBackgroundColor(cardBorder)
+        }
+        heroCard.addView(heroDivider)
+
+        // Quick Diagnostic Status Bar
+        val diagRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        val activeMode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
+        val host = prefs.getString(SshCollector.KEY_GATEWAY_HOST, SshCollector.DEFAULT_HOST) ?: SshCollector.DEFAULT_HOST
+        val port = prefs.getInt(SshCollector.KEY_GATEWAY_PORT, SshCollector.DEFAULT_PORT)
+        val sfpIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: SshCollector.DEFAULT_SFP_INTERFACE
+        val threshold = prefs.getFloat(SshCollector.KEY_ALERT_THRESHOLD, SshCollector.DEFAULT_ALERT_THRESHOLD.toFloat())
+
+        val latest = TelemetryRepository.getLatestSample(this)
+        val isEngineConnected = latest != null
+
+        // Status indicator dot + text
+        val statusContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val statusDot = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(7), dpToPx(7)).apply {
+                marginEnd = dpToPx(6)
+            }
+            background = createRoundedDrawable(
+                fillColor = if (isEngineConnected) emerald else ContextCompat.getColor(this@MainActivity, R.color.hotboi_brand),
+                cornerRadiusPx = 4f * density
+            )
+        }
+        val statusText = TextView(this).apply {
+            text = when (activeMode) {
+                SshCollector.MODE_SSH -> "Direct SSH ($host:$port)"
+                SshCollector.MODE_MAC_SERVER -> "macOS Server"
+                SshCollector.MODE_WIN_SERVER -> "Windows Server"
+                SshCollector.MODE_LINUX_SERVER -> "Linux Server"
+                else -> "Offline Mode"
+            }
+            setTextColor(if (isEngineConnected) emerald else brandRed)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        statusContainer.addView(statusDot)
+        statusContainer.addView(statusText)
+        diagRow.addView(statusContainer)
+
+        val portText = TextView(this).apply {
+            text = "Port: $sfpIface"
+            setTextColor(textSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dpToPx(6), 0, dpToPx(6), 0)
+        }
+        diagRow.addView(portText)
+
+        val alertText = TextView(this).apply {
+            text = "Trip: ${threshold.toInt()}°C"
+            setTextColor(textSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        diagRow.addView(alertText)
+
+        heroCard.addView(diagRow)
+        container.addView(heroCard)
+
+        // Scroll Area for details
+        val scrollArea = ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(10)
+            }
+        }
+
+        val scrollContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // SECTION 1: ARCHITECTURE & ZERO-DEPENDENCY ENGINE
+        val secArchTitle = TextView(this).apply {
+            text = "ZERO-OVERHEAD STANDALONE ARCHITECTURE"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.05f
+            setPadding(0, dpToPx(6), 0, dpToPx(4))
+        }
+        scrollContent.addView(secArchTitle)
+
+        val secArchDesc = TextView(this).apply {
+            text = "HotBoi is a standalone on-device telemetry monitor engineered for your UniFi Cloud Gateway Fiber (White Bean) and XGS-PON SFP+ optical stick transceivers.\n\nCommunicates directly from your Android phone to your gateway over Wi-Fi via embedded BouncyCastle Ed25519 SSH, with zero reliance on cloud relays, middleman servers, or external computers."
+            setTextColor(textPrimary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setLineSpacing(dpToPx(3).toFloat(), 1f)
+        }
+        scrollContent.addView(secArchDesc)
+
+        // SECTION 2: TELEMETRY PILLARS
+        val secFeatTitle = TextView(this).apply {
+            text = "TELEMETRY & HARDWARE CAPABILITIES"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.05f
+            setPadding(0, dpToPx(12), 0, dpToPx(4))
+        }
+        scrollContent.addView(secFeatTitle)
+
+        val feats = listOf(
+            "Real-time Laser Optics & Dual CPU thermals (Core 0 / Core 1)",
+            "Optical signal diagnostics (Average Rx / Tx power in dBm)",
+            "Laser Bias Current telemetry (mA) & PLOAM state tracking",
+            "Continuous ICMP gateway round-trip ping latency",
+            "Automated background WorkManager polling & thermal trip push notifications",
+            "Instant one-tap Dual °C / °F conversion & Light / Dark mode engine"
+        )
+        for (f in feats) {
+            val tvFeat = TextView(this).apply {
+                text = "• $f"
+                setTextColor(textSecondary)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                setLineSpacing(dpToPx(2).toFloat(), 1f)
+                setPadding(0, dpToPx(2), 0, dpToPx(2))
+            }
+            scrollContent.addView(tvFeat)
+        }
+
+        // SECTION 3: RELEASE CANDIDATE 1 & WHAT'S NEW BOX
+        val secRcTitle = TextView(this).apply {
+            text = "RELEASE CANDIDATE 1 & WHAT'S NEW"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.05f
+            setPadding(0, dpToPx(12), 0, dpToPx(4))
+        }
+        scrollContent.addView(secRcTitle)
+
+        val whatsNewBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+            background = createRoundedDrawable(
+                fillColor = bgDark,
+                cornerRadiusPx = 10f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+        }
+
+        val whatsNewText = TextView(this).apply {
+            text = "• Release Candidate 1 (RC1) milestone build\n" +
+                    "• Top bar Info button & dedicated About HotBoi diagnostic screen\n" +
+                    "• 1-Tap quick Light / Dark theme toggle directly in top app bar\n" +
+                    "• Modern vector drawables & responsive edge-to-edge UI\n" +
+                    "• Physical tactile haptic feedback on refreshes and unit toggles\n" +
+                    "• Screen-off radio power awareness to eliminate background Wi-Fi drain\n" +
+                    "• R8 minification & resource shrinking for faster launch & reduced footprint"
+            setTextColor(textPrimary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setLineSpacing(dpToPx(3).toFloat(), 1f)
+        }
+        whatsNewBox.addView(whatsNewText)
+        scrollContent.addView(whatsNewBox)
+
+        // SECTION 4: LINKS & RESOURCES
+        val secLinksTitle = TextView(this).apply {
+            text = "LINKS & RESOURCES"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.05f
+            setPadding(0, dpToPx(12), 0, dpToPx(6))
+        }
+        scrollContent.addView(secLinksTitle)
+
+        val linksRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        fun createLinkButton(title: String, url: String): TextView {
+            return TextView(this).apply {
+                text = title
+                setTextColor(cyan)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setPadding(dpToPx(8), dpToPx(7), dpToPx(8), dpToPx(7))
+                background = createRoundedDrawable(
+                    fillColor = bgDark,
+                    cornerRadiusPx = 8f * density,
+                    strokeWidthPx = strokePx,
+                    strokeColor = cardBorder
+                )
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dpToPx(3), 0, dpToPx(3), 0)
+                }
+                setOnClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (_: Exception) {
+                        Toast.makeText(this@MainActivity, "Could not open browser", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        linksRow.addView(createLinkButton("Changelog ↗", "https://github.com/medusko/HotBoi/blob/main/CHANGELOG.md"))
+        linksRow.addView(createLinkButton("Releases ↗", "https://github.com/medusko/HotBoi/releases"))
+        linksRow.addView(createLinkButton("Source Code ↗", "https://github.com/medusko/HotBoi"))
+        scrollContent.addView(linksRow)
+
+        // FOOTER ATTRIBUTION
+        val footerText = TextView(this).apply {
+            text = "HotBoi v$vName (Build 2) • Release Candidate 1 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
+            setTextColor(textMuted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            gravity = Gravity.CENTER
+            setPadding(0, dpToPx(12), 0, dpToPx(4))
+        }
+        scrollContent.addView(footerText)
+
+        scrollArea.addView(scrollContent)
+        container.addView(scrollArea)
+
+        // Close Button
+        val btnClose = Button(this).apply {
+            text = "Close"
+            setTextColor(cyan)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
+            background = createRoundedDrawable(
+                fillColor = bgDark,
+                cornerRadiusPx = 10f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dpToPx(42)
+            ).apply {
+                topMargin = dpToPx(10)
+            }
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                dialog.dismiss()
+            }
+        }
+        container.addView(btnClose)
+
+        dialog.setContentView(container)
+
+        // Set dialog window width
+        val displayWidth = resources.displayMetrics.widthPixels
+        dialog.window?.setLayout((displayWidth * 0.92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        dialog.show()
+    }
+
+    /**
      * Displays system diagnostic modal with copyable stack trace, active system reflection, and clear capability.
      */
     private fun showErrorDetailsDialog() {
@@ -568,15 +1073,13 @@ class MainActivity : AppCompatActivity() {
         btnClear.setOnClickListener {
             ErrorLogManager.clearErrors()
             binding.btnErrorLog.visibility = View.GONE
-            tvSummary.text = "Diagnostics cleared."
-            tvDetails.text = "No active errors recorded. All systems operational."
-            Toast.makeText(this, "Cleared diagnostics log", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+            Toast.makeText(this, "Error history cleared", Toast.LENGTH_SHORT).show()
         }
 
         btnCopy.setOnClickListener {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val fullText = "${tvActiveMode.text}\n${tvSummary.text}\n\n${tvDetails.text}"
-            val clip = ClipData.newPlainText("HotBoi Diagnostics Log", fullText)
+            val clip = ClipData.newPlainText("HotBoi Error Diagnostic", "System: $modeText\nSummary: ${tvSummary.text}\nDetails:\n${tvDetails.text}")
             clipboard.setPrimaryClip(clip)
             Toast.makeText(this, "Copied error diagnostics to clipboard", Toast.LENGTH_SHORT).show()
         }
@@ -611,21 +1114,21 @@ class MainActivity : AppCompatActivity() {
         val sectionServer = dialogView.findViewById<LinearLayout>(R.id.sectionServerSettings)
         val tvServerTitle = dialogView.findViewById<TextView>(R.id.tvServerSectionTitle)
         val tvServerBetaNote = dialogView.findViewById<TextView>(R.id.tvServerBetaNote)
+        val etServerUrl = dialogView.findViewById<EditText>(R.id.etServerUrl)
 
         val etHost = dialogView.findViewById<EditText>(R.id.etHost)
         val etPort = dialogView.findViewById<EditText>(R.id.etPort)
         val etUser = dialogView.findViewById<EditText>(R.id.etUser)
         val etPassword = dialogView.findViewById<EditText>(R.id.etPassword)
         val etSshKey = dialogView.findViewById<EditText>(R.id.etSshKey)
-        val btnLoadMacKey = dialogView.findViewById<Button>(R.id.btnLoadMacKey)
-        val spPing = dialogView.findViewById<Spinner>(R.id.spPingTarget)
-        val etCustomPing = dialogView.findViewById<EditText>(R.id.etCustomPingTarget)
+        val btnLoadMacKey = dialogView.findViewById<TextView>(R.id.btnLoadMacKey)
         val btnTest = dialogView.findViewById<Button>(R.id.btnTestConnection)
 
-        val etServerUrl = dialogView.findViewById<EditText>(R.id.etServerUrl)
+        val spPing = dialogView.findViewById<Spinner>(R.id.spPingTarget)
+        val etCustomPing = dialogView.findViewById<EditText>(R.id.etCustomPingTarget)
+
         val cbBg = dialogView.findViewById<CheckBox>(R.id.cbBackgroundSync)
         val spInterval = dialogView.findViewById<Spinner>(R.id.spInterval)
-
         val etThreshold = dialogView.findViewById<EditText>(R.id.etThreshold)
         val tvThresholdUnit = dialogView.findViewById<TextView>(R.id.tvThresholdUnit)
         val tvThresholdConverted = dialogView.findViewById<TextView>(R.id.tvThresholdConverted)
@@ -641,21 +1144,21 @@ class MainActivity : AppCompatActivity() {
         val rbThemeLight = dialogView.findViewById<RadioButton>(R.id.rbThemeLight)
         val rbThemeDark = dialogView.findViewById<RadioButton>(R.id.rbThemeDark)
 
-        // 1. Hardware & Universal SFP Interface Setup
+        // 1. Hardware & Interface
         etDeviceName.setText(prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME))
 
-        val sfpOptions = listOf(
-            "Port 7 (eth6) — UCG-Fiber SFP+",
-            "Port 8 (eth7)",
-            "Port 10 (eth9) — UDM-Pro / SE SFP+",
-            "Port 11 (eth10) — UDM-Pro / SE SFP+",
-            "Custom Interface..."
+        val sfpOptions = arrayOf(
+            "Port 7 SFP+ (eth6) — Cloud Gateway Fiber",
+            "Port 8 SFP+ (eth7) — Cloud Gateway Fiber",
+            "Port 10 SFP+ (eth9) — UDM Pro / SE / Pro Max",
+            "Port 11 SFP+ (eth10) — UDM Pro / SE / Pro Max",
+            "Custom Interface Name..."
         )
         val sfpAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, sfpOptions)
         spSfp.adapter = sfpAdapter
 
-        val savedSfp = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: "eth6"
-        when (savedSfp) {
+        val savedIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: SshCollector.DEFAULT_SFP_INTERFACE
+        when (savedIface) {
             "eth6" -> spSfp.setSelection(0)
             "eth7" -> spSfp.setSelection(1)
             "eth9" -> spSfp.setSelection(2)
@@ -663,7 +1166,7 @@ class MainActivity : AppCompatActivity() {
             else -> {
                 spSfp.setSelection(4)
                 etCustomSfp.visibility = View.VISIBLE
-                etCustomSfp.setText(savedSfp)
+                etCustomSfp.setText(savedIface)
             }
         }
 
@@ -674,11 +1177,8 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // 2. Collection Mode Selection Prepopulation
-        val currentMode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
-        val macUrl = prefs.getString(SshCollector.KEY_MAC_SERVER_URL, SshCollector.DEFAULT_MAC_SERVER_URL) ?: SshCollector.DEFAULT_MAC_SERVER_URL
-        val winUrl = prefs.getString(SshCollector.KEY_WIN_SERVER_URL, SshCollector.DEFAULT_WIN_SERVER_URL) ?: SshCollector.DEFAULT_WIN_SERVER_URL
-        val linuxUrl = prefs.getString(SshCollector.KEY_LINUX_SERVER_URL, SshCollector.DEFAULT_LINUX_SERVER_URL) ?: SshCollector.DEFAULT_LINUX_SERVER_URL
+        // 2. Data Collection Mode Switching
+        val currentMode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH)
 
         fun configureServerSection(title: String, note: String, url: String) {
             sectionSsh.visibility = View.GONE
@@ -689,28 +1189,28 @@ class MainActivity : AppCompatActivity() {
         }
 
         when (currentMode) {
-            SshCollector.MODE_MAC_SERVER, "server" -> {
+            SshCollector.MODE_MAC_SERVER -> {
                 rbMacServer.isChecked = true
                 configureServerSection(
-                    "MACOS SERVER ENDPOINT (BETA)",
-                    "🍏 BETA FEATURE: 24/7 background collector running on your Mac. Future premium feature.",
-                    macUrl
+                    "🍏 MACOS BACKGROUND SERVER (BETA)",
+                    "HotBoi will fetch continuous telemetry from your Mac daemon at 192.168.0.134:8080.",
+                    prefs.getString(SshCollector.KEY_MAC_SERVER_URL, SshCollector.DEFAULT_MAC_SERVER_URL) ?: SshCollector.DEFAULT_MAC_SERVER_URL
                 )
             }
             SshCollector.MODE_WIN_SERVER -> {
                 rbWinServer.isChecked = true
                 configureServerSection(
-                    "WINDOWS SERVER ENDPOINT (BETA)",
-                    "🪟 BETA FEATURE: 24/7 background service running on Windows 10/11. Future premium feature.",
-                    winUrl
+                    "🪟 WINDOWS BACKGROUND SERVER (BETA)",
+                    "HotBoi will fetch continuous telemetry from your Windows service at 192.168.0.171:8080.",
+                    prefs.getString(SshCollector.KEY_WIN_SERVER_URL, SshCollector.DEFAULT_WIN_SERVER_URL) ?: SshCollector.DEFAULT_WIN_SERVER_URL
                 )
             }
             SshCollector.MODE_LINUX_SERVER -> {
                 rbLinuxServer.isChecked = true
                 configureServerSection(
-                    "LINUX SERVER ENDPOINT (BETA)",
-                    "🐧 BETA FEATURE: 24/7 background systemd daemon on Debian/Ubuntu. Future premium feature.",
-                    linuxUrl
+                    "🐧 LINUX BACKGROUND SERVER (BETA)",
+                    "HotBoi will fetch continuous telemetry from your Debian / Ubuntu server daemon at 192.168.0.150:8080.",
+                    prefs.getString(SshCollector.KEY_LINUX_SERVER_URL, SshCollector.DEFAULT_LINUX_SERVER_URL) ?: SshCollector.DEFAULT_LINUX_SERVER_URL
                 )
             }
             SshCollector.MODE_OFFLINE -> {
@@ -727,51 +1227,57 @@ class MainActivity : AppCompatActivity() {
 
         rgMode.setOnCheckedChangeListener { _, checkedId ->
             when (checkedId) {
-                R.id.rbModeMacServer -> configureServerSection(
-                    "MACOS SERVER ENDPOINT (BETA)",
-                    "🍏 BETA FEATURE: 24/7 background collector running on your Mac. Future premium feature.",
-                    prefs.getString(SshCollector.KEY_MAC_SERVER_URL, SshCollector.DEFAULT_MAC_SERVER_URL) ?: SshCollector.DEFAULT_MAC_SERVER_URL
-                )
-                R.id.rbModeWinServer -> configureServerSection(
-                    "WINDOWS SERVER ENDPOINT (BETA)",
-                    "🪟 BETA FEATURE: 24/7 background service running on Windows 10/11. Future premium feature.",
-                    prefs.getString(SshCollector.KEY_WIN_SERVER_URL, SshCollector.DEFAULT_WIN_SERVER_URL) ?: SshCollector.DEFAULT_WIN_SERVER_URL
-                )
-                R.id.rbModeLinuxServer -> configureServerSection(
-                    "LINUX SERVER ENDPOINT (BETA)",
-                    "🐧 BETA FEATURE: 24/7 background systemd daemon on Debian/Ubuntu. Future premium feature.",
-                    prefs.getString(SshCollector.KEY_LINUX_SERVER_URL, SshCollector.DEFAULT_LINUX_SERVER_URL) ?: SshCollector.DEFAULT_LINUX_SERVER_URL
-                )
-                R.id.rbModeOffline -> {
-                    sectionSsh.visibility = View.GONE
+                R.id.rbModeDirectSsh -> {
+                    sectionSsh.visibility = View.VISIBLE
                     sectionServer.visibility = View.GONE
                 }
-                else -> {
-                    sectionSsh.visibility = View.VISIBLE
+                R.id.rbModeMacServer -> {
+                    configureServerSection(
+                        "🍏 MACOS BACKGROUND SERVER (BETA)",
+                        "HotBoi will fetch continuous telemetry from your Mac daemon at 192.168.0.134:8080.",
+                        prefs.getString(SshCollector.KEY_MAC_SERVER_URL, SshCollector.DEFAULT_MAC_SERVER_URL) ?: SshCollector.DEFAULT_MAC_SERVER_URL
+                    )
+                }
+                R.id.rbModeWinServer -> {
+                    configureServerSection(
+                        "🪟 WINDOWS BACKGROUND SERVER (BETA)",
+                        "HotBoi will fetch continuous telemetry from your Windows service at 192.168.0.171:8080.",
+                        prefs.getString(SshCollector.KEY_WIN_SERVER_URL, SshCollector.DEFAULT_WIN_SERVER_URL) ?: SshCollector.DEFAULT_WIN_SERVER_URL
+                    )
+                }
+                R.id.rbModeLinuxServer -> {
+                    configureServerSection(
+                        "🐧 LINUX BACKGROUND SERVER (BETA)",
+                        "HotBoi will fetch continuous telemetry from your Debian / Ubuntu server daemon at 192.168.0.150:8080.",
+                        prefs.getString(SshCollector.KEY_LINUX_SERVER_URL, SshCollector.DEFAULT_LINUX_SERVER_URL) ?: SshCollector.DEFAULT_LINUX_SERVER_URL
+                    )
+                }
+                R.id.rbModeOffline -> {
+                    sectionSsh.visibility = View.GONE
                     sectionServer.visibility = View.GONE
                 }
             }
         }
 
-        // 3. Ping Target Dropdown Prepopulation
-        val pingOptions = listOf(
-            "Cloudflare (1.1.1.1)",
-            "Google (8.8.8.8)",
-            "Quad9 (9.9.9.9)",
-            "Custom..."
+        // 3. Ping Target Selector
+        val pingOptions = arrayOf(
+            "1.1.1.1 (Cloudflare)",
+            "8.8.8.8 (Google)",
+            "9.9.9.9 (Quad9)",
+            "Custom Target..."
         )
         val pingAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, pingOptions)
         spPing.adapter = pingAdapter
 
-        val savedTarget = prefs.getString(SshCollector.KEY_PING_TARGET, "1.1.1.1") ?: "1.1.1.1"
-        when (savedTarget) {
+        val savedPing = prefs.getString(SshCollector.KEY_PING_TARGET, SshCollector.DEFAULT_PING_TARGET) ?: SshCollector.DEFAULT_PING_TARGET
+        when (savedPing) {
             "1.1.1.1" -> spPing.setSelection(0)
             "8.8.8.8" -> spPing.setSelection(1)
             "9.9.9.9" -> spPing.setSelection(2)
             else -> {
                 spPing.setSelection(3)
                 etCustomPing.visibility = View.VISIBLE
-                etCustomPing.setText(savedTarget)
+                etCustomPing.setText(savedPing)
             }
         }
 
@@ -782,13 +1288,8 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // 4. Background Interval Dropdown
-        val intervalOptions = listOf(
-            "Every 15 minutes",
-            "Every 30 minutes",
-            "Every 1 hour (Default)",
-            "Every 2 hours"
-        )
+        // 4. Background Scheduling
+        val intervalOptions = arrayOf("Every 15 minutes", "Every 30 minutes", "Every 1 hour (Recommended)", "Every 2 hours")
         val intervalAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, intervalOptions)
         spInterval.adapter = intervalAdapter
 
@@ -1049,6 +1550,7 @@ class MainActivity : AppCompatActivity() {
                         SshCollector.THEME_DARK -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                         else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
                     }
+                    updateThemeIcon()
                 }
 
                 Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
@@ -1064,6 +1566,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateUnitButtonLabel()
+        updateThemeIcon()
         refreshHandler.postDelayed(autoRefreshRunnable, AUTO_REFRESH_INTERVAL_MS)
     }
 
