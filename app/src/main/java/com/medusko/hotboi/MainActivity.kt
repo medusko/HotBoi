@@ -713,9 +713,9 @@ class MainActivity : AppCompatActivity() {
 
         // Version Chip
         val vName = try {
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0-RC1"
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0-RC1.1"
         } catch (_: Exception) {
-            "1.0.0-RC1"
+            "1.0.0-RC1.1"
         }
 
         val versionCol = LinearLayout(this).apply {
@@ -911,7 +911,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         val whatsNewText = TextView(this).apply {
-            text = "• Release Candidate 1 (RC1) milestone build\n" +
+            text = "• Release Candidate 1.1: Dual distribution & open-source prep\n" +
+                    "• Compile-time architecture flags & Google Play compliance\n" +
+                    "• Community support & GitHub Sponsor resource links\n" +
                     "• Top bar Info button & dedicated About HotBoi diagnostic screen\n" +
                     "• 1-Tap quick Light / Dark theme toggle directly in top app bar\n" +
                     "• Modern vector drawables & responsive edge-to-edge UI\n" +
@@ -945,10 +947,10 @@ class MainActivity : AppCompatActivity() {
             return TextView(this).apply {
                 text = title
                 setTextColor(cyan)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                setPadding(dpToPx(8), dpToPx(7), dpToPx(8), dpToPx(7))
+                setPadding(dpToPx(6), dpToPx(7), dpToPx(6), dpToPx(7))
                 background = createRoundedDrawable(
                     fillColor = bgDark,
                     cornerRadiusPx = 8f * density,
@@ -956,7 +958,7 @@ class MainActivity : AppCompatActivity() {
                     strokeColor = cardBorder
                 )
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(dpToPx(3), 0, dpToPx(3), 0)
+                    setMargins(dpToPx(2), 0, dpToPx(2), 0)
                 }
                 setOnClickListener {
                     try {
@@ -971,11 +973,12 @@ class MainActivity : AppCompatActivity() {
         linksRow.addView(createLinkButton("Changelog ↗", "https://github.com/medusko/HotBoi/blob/main/CHANGELOG.md"))
         linksRow.addView(createLinkButton("Releases ↗", "https://github.com/medusko/HotBoi/releases"))
         linksRow.addView(createLinkButton("Source Code ↗", "https://github.com/medusko/HotBoi"))
+        linksRow.addView(createLinkButton("Sponsor ☕ ↗", "https://github.com/sponsors/Zlatty"))
         scrollContent.addView(linksRow)
 
         // FOOTER ATTRIBUTION
         val footerText = TextView(this).apply {
-            text = "HotBoi v$vName (Build 2) • Release Candidate 1 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
+            text = "HotBoi v$vName (Build 3) • Release Candidate 1.1 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
             setTextColor(textMuted)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             gravity = Gravity.CENTER
