@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.0.0-RC1.1] - 2026-11-04
+
+### 🌟 Release Candidate 1.1 Highlights
+- **Dual-Distribution & Play Store Compliance Foundation**:
+  - Integrated compile-time `BuildConfig` flags (`SHOW_ADS`) supporting dual distribution flavors (Ad-supported Google Play vs. free & open-source GitHub builds).
+- **Resource & Support Quick Links**:
+  - Enhanced About HotBoi dialog with dedicated **Sponsor / Support ☕ ↗** link pointing directly to GitHub Sponsors alongside Changelog, Releases, and Source Code.
+- **Build & Automation Modernization**:
+  - Incremented version to **v1.0.0-RC1.1 (Build 3)**.
+  - Added automated `/mass-update` pipeline (`scripts/mass_update.sh`) with wireless ADB deployment.
+
+---
+
 ## [v1.0.0-RC1] - 2026-11-04
 
 ### 🌟 Release Candidate 1 Highlights
