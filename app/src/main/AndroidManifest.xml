@@ -16,6 +16,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HotBoi"
         android:usesCleartextTraffic="true">
+        <!-- Google AdMob Application ID -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-9364532905929549~4576978092" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

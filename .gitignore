@@ -10,6 +10,9 @@ app/build/
 
 # Local configuration & environment
 local.properties
+keystore.properties
+*.keystore
+*.jks
 .env
 *.env
 
