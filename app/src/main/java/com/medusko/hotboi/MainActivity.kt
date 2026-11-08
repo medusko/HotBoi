@@ -976,6 +976,62 @@ class MainActivity : AppCompatActivity() {
         linksRow.addView(createLinkButton("Sponsor ☕ ↗", "https://github.com/sponsors/Zlatty"))
         scrollContent.addView(linksRow)
 
+        // Contact Information Card
+        val contactCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+            background = createRoundedDrawable(
+                fillColor = bgDark,
+                cornerRadiusPx = 10f * density,
+                strokeWidthPx = strokePx,
+                strokeColor = cardBorder
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(8)
+            }
+        }
+
+        fun createContactRow(label: String, value: String, url: String?): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dpToPx(2)
+                    bottomMargin = dpToPx(2)
+                }
+                addView(TextView(this@MainActivity).apply {
+                    text = label
+                    setTextColor(textSecondary)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(72), ViewGroup.LayoutParams.WRAP_CONTENT)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = value
+                    setTextColor(if (url != null) cyan else textPrimary)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                    if (url != null) {
+                        typeface = Typeface.DEFAULT_BOLD
+                        setOnClickListener {
+                            try {
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                })
+            }
+        }
+
+        contactCard.addView(createContactRow("Website:", "medusko.com", "https://medusko.com"))
+        contactCard.addView(createContactRow("Support:", "support@medusko.com", "mailto:support@medusko.com"))
+        contactCard.addView(createContactRow("Social:", "@meduskodev on Twitter", "https://twitter.com/meduskodev"))
+        scrollContent.addView(contactCard)
+
         // FOOTER ATTRIBUTION
         val footerText = TextView(this).apply {
             text = "HotBoi v$vName (Build 3) • Release Candidate 1.1 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"

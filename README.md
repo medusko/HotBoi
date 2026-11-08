@@ -91,3 +91,12 @@ export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 ./gradlew assembleRelease
 ```
 Output: `app/build/outputs/apk/release/app-release.apk` (5.0 MB minified)
+
+---
+
+## 📬 Contact & Support
+
+- **Website:** [medusko.com](https://medusko.com)
+- **Support Contact:** [support@medusko.com](mailto:support@medusko.com)
+- **Social:** [@meduskodev on Twitter](https://twitter.com/meduskodev)
+
