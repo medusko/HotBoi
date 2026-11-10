@@ -28,8 +28,43 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Configure Release Signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$KEYSTORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Missing Android signing secrets (ANDROID_KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64, os, pathlib
+
+          ws = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          ks_path = ws / "release.keystore"
+          ks_path.write_bytes(base64.b64decode("".join(os.environ["ANDROID_KEYSTORE_BASE64"].split())))
+
+          def esc(val: str) -> str:
+              return val.replace("\\", "\\\\")
+
+          props = "\n".join([
+              f"storeFile={esc(str(ks_path))}",
+              f"storePassword={esc(os.environ['KEYSTORE_PASSWORD'])}",
+              f"keyAlias={esc(os.environ['KEY_ALIAS'])}",
+              f"keyPassword={esc(os.environ['KEY_PASSWORD'])}",
+              "",
+          ])
+          (ws / "keystore.properties").write_text(props, encoding="utf-8")
+          PY
+
       - name: Build Release APK
         run: ./gradlew assembleRelease
+
+      - name: Clean Up Release Signing Material
+        if: always()
+        run: rm -f "${{ github.workspace }}/release.keystore" "${{ github.workspace }}/keystore.properties"
 
       - name: Rename APK
         run: |

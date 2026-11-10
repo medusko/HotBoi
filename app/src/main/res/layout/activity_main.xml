@@ -43,10 +43,11 @@
             android:layout_height="32dp"
             android:layout_marginEnd="5dp"
             android:background="@drawable/badge_bg"
+            android:drawablePadding="5dp"
             android:gravity="center"
-            android:paddingHorizontal="8dp"
+            android:paddingHorizontal="9dp"
             android:paddingVertical="0dp"
-            android:text="Offline"
+            android:text="Direct SSH"
             android:textColor="@color/text_secondary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -71,7 +72,26 @@
             android:clickable="true"
             android:focusable="true" />
 
-        <!-- Error / Warning Button Pill -->
+        <!-- Refresh Button Styled as a Matching Pill (Moved between temperature toggle and about) -->
+        <FrameLayout
+            android:id="@+id/btnRefresh"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginEnd="5dp"
+            android:background="@drawable/badge_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/refresh">
+            <ImageView
+                android:id="@+id/ivRefreshIcon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_refresh"
+                app:tint="@color/text_primary" />
+        </FrameLayout>
+
+        <!-- Error / Warning Button Pill (Positioned right after operational tools) -->
         <FrameLayout
             android:id="@+id/btnErrorLog"
             android:layout_width="32dp"
@@ -90,6 +110,15 @@
                 app:tint="#EF4444" />
         </FrameLayout>
 
+        <!-- Vertical Separator Divider (|) between telemetry controls and meta controls -->
+        <View
+            android:id="@+id/topBarDivider"
+            android:layout_width="1dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="6dp"
+            android:background="@color/card_border" />
+
         <!-- About Button Styled as a Matching Pill -->
         <FrameLayout
             android:id="@+id/btnAbout"
@@ -101,6 +130,7 @@
             android:focusable="true"
             android:contentDescription="About HotBoi">
             <ImageView
+                android:id="@+id/ivAboutIcon"
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -108,7 +138,7 @@
                 app:tint="@color/text_primary" />
         </FrameLayout>
 
-        <!-- Quick Theme Toggle Pill (Sun in Dark, Moon in Light) -->
+        <!-- Quick Theme Toggle Pill (Current state: Sun in Light, Moon in Dark) -->
         <FrameLayout
             android:id="@+id/btnThemeToggle"
             android:layout_width="32dp"
@@ -123,25 +153,7 @@
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:layout_gravity="center"
-                android:src="@drawable/ic_light_mode"
-                app:tint="@color/text_primary" />
-        </FrameLayout>
-
-        <!-- Refresh Button Styled as a Matching Pill -->
-        <FrameLayout
-            android:id="@+id/btnRefresh"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_marginEnd="5dp"
-            android:background="@drawable/badge_bg"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="@string/refresh">
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_refresh"
+                android:src="@drawable/ic_dark_mode"
                 app:tint="@color/text_primary" />
         </FrameLayout>
 
@@ -155,6 +167,7 @@
             android:focusable="true"
             android:contentDescription="@string/settings">
             <ImageView
+                android:id="@+id/ivSettingsIcon"
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -196,59 +209,5 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Modern App Splash / Loading Page -->
-    <LinearLayout
-        android:id="@+id/layoutLoading"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/bg_main"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:elevation="12dp"
-        android:clickable="true"
-        android:focusable="true">
-
-        <ImageView
-            android:layout_width="88dp"
-            android:layout_height="88dp"
-            android:src="@drawable/ic_launcher_foreground"
-            android:background="@drawable/badge_bg"
-            android:padding="8dp"
-            android:contentDescription="HotBoi Logo" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="HotBoi"
-            android:textColor="@color/hotboi_brand"
-            android:textSize="26sp"
-            android:letterSpacing="0.02"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Universal SFP+ Optical Telemetry"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <ProgressBar
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_marginTop="28dp"
-            android:indeterminateTint="@color/primary_cyan" />
-
-        <TextView
-            android:id="@+id/tvLoadingStatus"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Connecting to telemetry engine..."
-            android:textColor="@color/text_muted"
-            android:textSize="12sp" />
-    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

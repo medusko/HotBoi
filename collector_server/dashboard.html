@@ -253,12 +253,18 @@
       <div class="web-nav-left">
         <span class="brand-logo-text">HotBoi</span>
         <span class="brand-tag">SFP+ Telemetry</span>
-        <span class="status-badge" id="webServerBadge">🟢 Live Server</span>
+        <span class="status-badge" id="webServerBadge">
+          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#34d399;"></span>
+          <span>Live Server</span>
+        </span>
       </div>
       <div class="web-nav-right">
         <button type="button" class="web-nav-btn" id="btnWebUnit" onclick="toggleWebUnit()">°C</button>
-        <button type="button" class="web-nav-btn" id="btnWebTheme" onclick="toggleWebTheme()">🌙 Dark</button>
-        <button type="button" class="web-nav-btn" id="btnWebRefresh" onclick="manualWebRefresh()">🔄 Refresh</button>
+        <button type="button" class="web-nav-btn" id="btnWebTheme" onclick="toggleWebTheme()">Dark</button>
+        <button type="button" class="web-nav-btn" id="btnWebRefresh" onclick="manualWebRefresh()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          <span>Refresh</span>
+        </button>
       </div>
     </div>
 
@@ -588,7 +594,36 @@
     window.setTimeRange = setTimeRange;
 
     function updateChartsWithRange(data) {
-      if (!data || !data.labels || !data.labels.length) return;
+      var unitSym = currentUnit === "F" ? "°F" : "°C";
+      var threshVal = currentUnit === "F" ? Number(cToF(currentThresholdC).toFixed(1)) : currentThresholdC;
+      var dualThreshLabel = formatDual(currentThresholdC);
+      var theme = getChartTheme();
+
+      if (!data || !data.labels || !data.labels.length) {
+        if (window.tempChartInstance) {
+          window.tempChartInstance.data.labels = [];
+          window.tempChartInstance.data.fullTimestamps = [];
+          window.tempChartInstance.data.datasets.forEach(function(ds) { ds.data = []; });
+          window.tempChartInstance.options.scales.y.grid.color = theme.grid;
+          window.tempChartInstance.options.scales.y.ticks.color = theme.ticks;
+          window.tempChartInstance.options.scales.x.grid.color = theme.xGrid;
+          window.tempChartInstance.options.scales.x.ticks.color = theme.ticks;
+          window.tempChartInstance.options.plugins.legend.labels.color = theme.legend;
+          window.tempChartInstance.update();
+        }
+        if (window.latencyChartInstance) {
+          window.latencyChartInstance.data.labels = [];
+          window.latencyChartInstance.data.fullTimestamps = [];
+          window.latencyChartInstance.data.datasets[0].data = [];
+          window.latencyChartInstance.options.scales.y.grid.color = theme.grid;
+          window.latencyChartInstance.options.scales.y.ticks.color = theme.ticks;
+          window.latencyChartInstance.options.scales.x.grid.color = theme.xGrid;
+          window.latencyChartInstance.options.scales.x.ticks.color = theme.ticks;
+          window.latencyChartInstance.options.plugins.legend.labels.color = theme.legend;
+          window.latencyChartInstance.update();
+        }
+        return;
+      }
 
       var total = data.labels.length;
       var startIdx = 0;
@@ -628,15 +663,10 @@
       var slicedCpu1 = (data.cpu1Data || []).slice(startIdx);
       var slicedPing = (data.pingData || []).slice(startIdx);
 
-      var unitSym = currentUnit === "F" ? "°F" : "°C";
       var conv = function(arr) {
         if (!arr) return [];
         return currentUnit === "F" ? arr.map(function(v) { return Number(cToF(v).toFixed(1)); }) : arr;
       };
-
-      var threshVal = currentUnit === "F" ? Number(cToF(currentThresholdC).toFixed(1)) : currentThresholdC;
-      var dualThreshLabel = formatDual(currentThresholdC);
-      var theme = getChartTheme();
 
       // Update Temp Chart
       if (window.tempChartInstance) {
@@ -701,6 +731,33 @@
         }
         if (data.threshold) currentThresholdC = Number(data.threshold);
 
+        // Subtitle & Mode (Universal SFP+ indicator) — always update even when latest sample is null
+        var dev = data.deviceName || "Primary Network Gateway";
+        var port = data.portName || "Port 7 SFP+ (eth6)";
+        var modeLabel = "Direct SSH";
+        if (data.mode === "win_server") modeLabel = "Windows Server (BETA)";
+        else if (data.mode === "mac_server") modeLabel = "macOS Server (BETA)";
+        else if (data.mode === "linux_server") modeLabel = "Linux Server (BETA)";
+        else if (data.mode === "offline") modeLabel = "Offline (Cached)";
+        else if (data.mode === "server") modeLabel = "Host Collector Daemon";
+
+        var subEl = document.getElementById("dashboardSubtitle");
+        if (subEl) {
+          subEl.textContent = "Universal SFP+ / SFP28 \u2022 " + dev + " \u2022 " + port + " \u2022 " + modeLabel;
+        }
+
+        var rawTarget = data.pingTarget || data.ping_target || (data.latest && data.latest.ping_target) || "1.1.1.1 (Cloudflare)";
+        var cleanTarget = rawTarget.replace(/^\((.*)\)$/, '$1');
+        var elLatencyTitle = document.getElementById("latencyChartTitle");
+        if (elLatencyTitle) {
+          elLatencyTitle.textContent = "Internet Latency History \u2022 " + cleanTarget;
+        }
+
+        var badgeState = document.getElementById("badgeState");
+        var dotState = document.getElementById("dotState");
+        var valPloam = document.getElementById("valPloam");
+        var elBadge = document.getElementById("badgeSamples");
+
         if (data.latest) {
           var s = data.latest;
 
@@ -711,7 +768,7 @@
           if (elSubOptic) {
             var dualCurrent = formatDual(s.optic_temp);
             var dualSafeLimit = currentUnit === "F" ? "185.0 °F (85.0 °C)" : "85.0 °C (185.0 °F)";
-            elSubOptic.innerHTML = dualCurrent + " &bull; Safe Limit: " + dualSafeLimit;
+            elSubOptic.textContent = dualCurrent + " \u2022 Safe Limit: " + dualSafeLimit;
           }
 
           // CPU Core 0
@@ -721,40 +778,22 @@
           if (elSubCpu0) {
             var dualCurrent = formatDual(s.cpu0_temp);
             var dualAlertLimit = formatDual(currentThresholdC);
-            elSubCpu0.innerHTML = dualCurrent + " &bull; Alert: " + dualAlertLimit;
+            elSubCpu0.textContent = dualCurrent + " \u2022 Alert: " + dualAlertLimit;
           }
 
           // Optical Rx & Tx
           var elRx = document.getElementById("valRx");
-          if (elRx) elRx.textContent = (s.rx_power != null ? s.rx_power : "--") + " dBm";
+          if (elRx) elRx.textContent = (s.rx_power != null && s.rx_power !== 0 ? s.rx_power + " dBm" : "--");
           var elSubRx = document.getElementById("subRx");
-          if (elSubRx) elSubRx.textContent = "Tx Power: " + (s.tx_power != null ? s.tx_power : "--") + " dBm";
+          if (elSubRx) elSubRx.textContent = "Tx Power: " + (s.tx_power != null && s.tx_power !== 0 ? s.tx_power + " dBm" : "--");
 
           // Ping
           var elPing = document.getElementById("valPing");
           if (elPing) elPing.textContent = (s.ping_ms != null ? s.ping_ms : "--") + " ms";
           var elSubPing = document.getElementById("subPing");
-          var displayPingTarget = data.pingTarget || data.ping_target || s.ping_target || "8.8.8.8 (Google)";
-          if (elSubPing) elSubPing.textContent = "Target: " + displayPingTarget;
-
-          // Subtitle & Mode (Universal SFP+ indicator)
-          var subEl = document.getElementById("dashboardSubtitle");
-          if (subEl) {
-            var dev = data.deviceName || "Universal SFP+ Device";
-            var port = data.portName || "Port 7 SFP+";
-            var modeLabel = "Direct SSH";
-            if (data.mode === "win_server") modeLabel = "Windows Server (Desky • BETA)";
-            else if (data.mode === "mac_server") modeLabel = "macOS Server (BETA)";
-            else if (data.mode === "linux_server") modeLabel = "Linux Server (BETA)";
-            else if (data.mode === "offline") modeLabel = "Offline (Cached)";
-            else if (data.mode === "server") modeLabel = "Host Collector Daemon";
-            subEl.innerHTML = "Universal SFP+ / SFP28 &bull; " + dev + " &bull; " + port + " &bull; " + modeLabel;
-          }
+          if (elSubPing) elSubPing.textContent = "Target: " + cleanTarget;
 
           // State Badge
-          var badgeState = document.getElementById("badgeState");
-          var dotState = document.getElementById("dotState");
-          var valPloam = document.getElementById("valPloam");
           if (data.mode === "offline") {
             if (badgeState) {
               badgeState.style.background = isLightMode ? "#e2e8f0" : "#1e293b";
@@ -774,17 +813,38 @@
           }
 
           // Sample Count Pill
-          var elBadge = document.getElementById("badgeSamples");
-          var srcTag = data.sourceLabel ? " &bull; " + data.sourceLabel : "";
-          if (elBadge) elBadge.innerHTML = (data.sampleCount || "") + " samples (" + (s.timestamp || "") + srcTag + ")";
+          var srcTag = data.sourceLabel ? " \u2022 " + data.sourceLabel : "";
+          if (elBadge) elBadge.textContent = (data.sampleCount || "1") + " samples (" + (s.timestamp || "") + srcTag + ")";
+        } else {
+          // No samples recorded yet for this SFP+ port or mode
+          var elOptic = document.getElementById("valOptic");
+          if (elOptic) elOptic.textContent = "--";
+          var elSubOptic = document.getElementById("subOptic");
+          if (elSubOptic) elSubOptic.textContent = "No optical telemetry on " + port;
 
-          // Latency Chart Title with clean formatted Domain Target (No double parentheses)
-          var elLatencyTitle = document.getElementById("latencyChartTitle");
-          if (elLatencyTitle) {
-            var rawTarget = data.pingTarget || data.ping_target || s.ping_target || "8.8.8.8 (Google)";
-            var cleanTarget = rawTarget.replace(/^\((.*)\)$/, '$1');
-            elLatencyTitle.textContent = "Internet Latency History \u2022 " + cleanTarget;
+          var elCpu0 = document.getElementById("valCpu0");
+          if (elCpu0) elCpu0.textContent = "--";
+          var elSubCpu0 = document.getElementById("subCpu0");
+          if (elSubCpu0) elSubCpu0.textContent = "Alert Limit: " + formatDual(currentThresholdC);
+
+          var elRx = document.getElementById("valRx");
+          if (elRx) elRx.textContent = "--";
+          var elSubRx = document.getElementById("subRx");
+          if (elSubRx) elSubRx.textContent = "Tx Power: --";
+
+          var elPing = document.getElementById("valPing");
+          if (elPing) elPing.textContent = "--";
+          var elSubPing = document.getElementById("subPing");
+          if (elSubPing) elSubPing.textContent = "Target: " + cleanTarget;
+
+          if (badgeState) {
+            badgeState.style.background = isLightMode ? "#e2e8f0" : "#1e293b";
+            badgeState.style.color = isLightMode ? "#1e293b" : "#94a3b8";
+            badgeState.style.border = isLightMode ? "1px solid #cbd5e1" : "1px solid #334155";
           }
+          if (dotState) dotState.style.background = isLightMode ? "#475569" : "#94a3b8";
+          if (valPloam) valPloam.textContent = "Awaiting Live Probe (" + port + ")";
+          if (elBadge) elBadge.textContent = "0 samples (" + (data.sourceLabel || modeLabel) + ")";
         }
 
         // Render charts respecting current active range
@@ -795,13 +855,34 @@
       }
     };
 
+    window.applyDisplayPreferences = function(tempUnit, isLight) {
+      if (rawTelemetryBundle) {
+        if (tempUnit !== undefined && tempUnit !== null) {
+          rawTelemetryBundle.tempUnit = tempUnit;
+        }
+        if (isLight !== undefined && isLight !== null) {
+          rawTelemetryBundle.isLight = !!isLight;
+        }
+        window.renderDashboardWithData(rawTelemetryBundle);
+        return true;
+      }
+      return false;
+    };
+
+    function getThemeBtnHtml(light) {
+      if (light) {
+        return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1z"/></svg><span>Light</span>';
+      }
+      return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg><span>Dark</span>';
+    }
+
     // Controls for standalone desktop/server web browsers (Windows, Mac, Linux)
     function toggleWebTheme() {
       isLightMode = !isLightMode;
       document.body.classList.toggle('light-theme', isLightMode);
       localStorage.setItem("hotboi_theme", isLightMode ? "light" : "dark");
       var btn = document.getElementById("btnWebTheme");
-      if (btn) btn.innerHTML = isLightMode ? "☀️ Light" : "🌙 Dark";
+      if (btn) btn.innerHTML = getThemeBtnHtml(isLightMode);
       if (rawTelemetryBundle) {
         rawTelemetryBundle.isLight = isLightMode;
         window.renderDashboardWithData(rawTelemetryBundle);
@@ -847,7 +928,7 @@
             cpu0Data: [single.cpu0_temp],
             cpu1Data: [single.cpu1_temp],
             pingData: [single.ping_ms],
-            pingTarget: single.ping_target || "8.8.8.8 (Google)",
+            pingTarget: single.ping_target || "1.1.1.1 (Cloudflare)",
             mode: "server"
           });
         }
@@ -865,7 +946,7 @@
         document.body.classList.remove('light-theme');
       }
       var themeBtn = document.getElementById("btnWebTheme");
-      if (themeBtn) themeBtn.innerHTML = isLightMode ? "☀️ Light" : "🌙 Dark";
+      if (themeBtn) themeBtn.innerHTML = getThemeBtnHtml(isLightMode);
 
       var savedUnit = localStorage.getItem("hotboi_unit");
       if (savedUnit === "F" || savedUnit === "C") {

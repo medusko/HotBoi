@@ -14,7 +14,7 @@ class ThermalWorker(
 
     override suspend fun doWork(): Result {
         val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
-        val bgEnabled = prefs.getBoolean(SshCollector.KEY_BG_ENABLED, true)
+        val bgEnabled = prefs.getBoolean(SshCollector.KEY_BG_ENABLED, false)
         if (!bgEnabled) {
             return Result.success()
         }
@@ -29,22 +29,40 @@ class ThermalWorker(
                 return Result.success()
             }
         } else if (mode == SshCollector.MODE_MAC_SERVER || mode == SshCollector.MODE_WIN_SERVER || mode == SshCollector.MODE_LINUX_SERVER || mode == SshCollector.MODE_SERVER) {
-            val serverUrl = prefs.getString(SshCollector.KEY_SERVER_URL, SshCollector.DEFAULT_SERVER_URL) ?: SshCollector.DEFAULT_SERVER_URL
+            val prefKey = when (mode) {
+                SshCollector.MODE_WIN_SERVER -> SshCollector.KEY_WIN_SERVER_URL
+                SshCollector.MODE_LINUX_SERVER -> SshCollector.KEY_LINUX_SERVER_URL
+                SshCollector.MODE_MAC_SERVER -> SshCollector.KEY_MAC_SERVER_URL
+                else -> SshCollector.KEY_SERVER_URL
+            }
+            val defaultUrl = when (mode) {
+                SshCollector.MODE_WIN_SERVER -> SshCollector.DEFAULT_WIN_SERVER_URL
+                SshCollector.MODE_LINUX_SERVER -> SshCollector.DEFAULT_LINUX_SERVER_URL
+                SshCollector.MODE_MAC_SERVER -> SshCollector.DEFAULT_MAC_SERVER_URL
+                else -> SshCollector.DEFAULT_SERVER_URL
+            }
+            val serverUrl = prefs.getString(prefKey, defaultUrl)?.trim() ?: defaultUrl
+            var conn: HttpURLConnection? = null
             try {
-                val endpoint = if (serverUrl.endsWith("/api/telemetry")) serverUrl else "${serverUrl.trimEnd('/')}/api/telemetry"
+                val base = serverUrl.trimEnd('/')
+                val endpoint = if (base.endsWith("/api/telemetry")) base else "$base/api/telemetry"
                 val url = URL(endpoint)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                }
                 if (conn.responseCode == 200) {
-                    val json = conn.inputStream.bufferedReader().readText()
+                    val json = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                     val sample = Gson().fromJson(json, TelemetrySample::class.java)
                     if (sample != null) {
                         TelemetryRepository.addSample(context, sample, mode)
                         NotificationHelper.checkThresholdAndAlert(context, sample)
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                conn?.disconnect()
+            }
         }
         return Result.success()
     }

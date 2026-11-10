@@ -6,25 +6,19 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# JSch & BouncyCastle (SSH Telemetry Engine)
+# JSch (SSH Telemetry Engine)
 -keep class com.jcraft.jsch.** { *; }
 -keep interface com.jcraft.jsch.** { *; }
 -dontwarn com.jcraft.jsch.**
 
--keep class org.bouncycastle.** { *; }
+# BouncyCastle SPI Providers needed by JSch for Ed25519 / Curve25519
+-keep class org.bouncycastle.jcajce.provider.** { *; }
+-keep class org.bouncycastle.jce.provider.** { *; }
+-keep class org.bouncycastle.crypto.engines.** { *; }
+-keep class org.bouncycastle.crypto.params.** { *; }
 -dontwarn org.bouncycastle.**
 
-# Gson & Telemetry Data Models
+# Telemetry Data Models
 -keep class com.medusko.hotboi.TelemetrySample { *; }
 -keep class com.medusko.hotboi.TelemetryRepository$** { *; }
 -keepclassmembers class com.medusko.hotboi.TelemetrySample { <fields>; <methods>; }
--keep class com.google.gson.** { *; }
--dontwarn com.google.gson.**
-
-# AndroidX WorkManager
--keep class com.medusko.hotboi.ThermalWorker { *; }
--keep class * extends androidx.work.ListenableWorker {
-    public <init>(android.content.Context, androidx.work.WorkerParameters);
-}
--keep class androidx.work.** { *; }
--dontwarn androidx.work.**

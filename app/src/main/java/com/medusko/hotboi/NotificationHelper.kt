@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -28,7 +29,7 @@ object NotificationHelper {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "High priority push notifications when UniFi SFP+ or CPU temperature exceeds threshold"
+                description = "High priority push notifications when optical transceiver or CPU temperature exceeds threshold"
                 enableLights(true)
                 lightColor = Color.RED
                 enableVibration(true)
@@ -91,7 +92,7 @@ object NotificationHelper {
         val cpuStr = fmt(sample.cpu0Temp)
         val threshStr = fmt(thresholdC)
 
-        val title = if (isTest) "🔥 HotBoi Test Notification" else "🚨 HotBoi Thermal Trip Alert!"
+        val title = if (isTest) "HotBoi Test Notification" else "HotBoi Thermal Trip Alert"
         val shortContent = if (isTest) {
             "Notification system active! Optic: $opticStr | CPU: $cpuStr"
         } else {
@@ -122,8 +123,19 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val largeIconBitmap = try {
+            BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+        } catch (_: Exception) {
+            null
+        }
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setSmallIcon(R.drawable.ic_hotboi_notification)
+            .apply {
+                if (largeIconBitmap != null) {
+                    setLargeIcon(largeIconBitmap)
+                }
+            }
             .setContentTitle(title)
             .setContentText(shortContent)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))

@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light Mode (Day) Colors - Tuned for maximum contrast & accessibility -->
-    <color name="bg_main">#F8FAFC</color>
-    <color name="bg_dark">#F1F5F9</color>
-    <color name="card_bg">#FFFFFF</color>
-    <color name="card_border">#CBD5E1</color>
-    <!-- Brand HotBoi Red (Light Mode: Rich Ruby Crimson) -->
-    <color name="hotboi_brand">#DC2626</color>
-    <color name="primary_cyan">#0284C7</color>
-    <color name="accent_emerald">#059669</color>
+    <!-- Light Mode (Day) Colors - Matching Lagatron & Keyboardy Warm Linen / Cream & Medusko Blue -->
+    <color name="bg_main">#F6F1E8</color>
+    <color name="bg_dark">#ECE5D9</color>
+    <color name="card_bg">#FFFDF9</color>
+    <color name="card_border">#DCD4C6</color>
+    <!-- Brand HotBoi Blue (Matching Keyboardy & Lagatron Medusko Cobalt Blue #2E6BD9) -->
+    <color name="hotboi_brand">#2E6BD9</color>
+    <color name="primary_cyan">#2E6BD9</color>
+    <color name="accent_emerald">#00C853</color>
     <color name="accent_purple">#7E22CE</color>
     <color name="accent_amber">#B45309</color>
-    <color name="text_beta">#9A3412</color>
-    <color name="text_primary">#0F172A</color>
-    <color name="text_secondary">#334155</color>
-    <color name="text_muted">#64748B</color>
-    <color name="console_bg">#0F172A</color>
-    <color name="console_text">#38BDF8</color>
+    <color name="text_beta">#B45309</color>
+    <color name="text_primary">#1E1A16</color>
+    <color name="text_secondary">#6B6358</color>
+    <color name="text_muted">#948B7D</color>
+    <color name="console_bg">#1E1A16</color>
+    <color name="console_text">#60A5FA</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

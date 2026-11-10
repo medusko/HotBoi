@@ -9,20 +9,33 @@ plugins {
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
-        load(FileInputStream(keystorePropertiesFile))
+        FileInputStream(keystorePropertiesFile).use { load(it) }
     }
 }
 
+val requiredSigningProps = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val configuredStoreFile = keystoreProperties.getProperty("storeFile")?.trim().orEmpty()
+val resolvedStoreFile = if (configuredStoreFile.isNotEmpty()) {
+    val moduleRelative = file(configuredStoreFile)
+    if (moduleRelative.exists()) moduleRelative else rootProject.file(configuredStoreFile)
+} else {
+    null
+}
+val hasValidReleaseSigning = keystorePropertiesFile.exists() &&
+    requiredSigningProps.all { !keystoreProperties.getProperty(it).isNullOrBlank() } &&
+    resolvedStoreFile != null &&
+    resolvedStoreFile.exists()
+
 android {
     namespace = "com.medusko.hotboi"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.medusko.hotboi"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.0-RC1.1"
+        versionCode = 6
+        versionName = "1.0.0-RC2-Beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -31,13 +44,11 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
+            if (hasValidReleaseSigning) {
+                storeFile = resolvedStoreFile
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
-            } else {
-                initWith(getByName("debug"))
             }
         }
     }
@@ -46,7 +57,11 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (hasValidReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -94,4 +109,24 @@ dependencies {
     implementation(libs.gson)
     implementation("org.bouncycastle:bcprov-jdk18on:1.79")
     testImplementation("junit:junit:4.13.2")
+}
+
+gradle.taskGraph.whenReady {
+    val releaseBuildTasks = setOf(
+        "assembleRelease",
+        "bundleRelease",
+        "packageRelease",
+        "packageReleaseBundle",
+        "signReleaseBundle",
+        "validateSigningRelease"
+    )
+    val runningReleasePackaging = allTasks.any { task ->
+        task.project == project && task.name in releaseBuildTasks
+    }
+    if (runningReleasePackaging && !hasValidReleaseSigning) {
+        throw GradleException(
+            "Release signing is not configured: missing keystore.properties, required signing properties, " +
+                "or keystore file. Refusing to fall back to debug signing."
+        )
+    }
 }

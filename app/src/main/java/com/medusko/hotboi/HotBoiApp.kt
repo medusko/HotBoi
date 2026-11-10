@@ -28,13 +28,15 @@ class HotBoiApp : Application() {
             Log.e("HotBoiApp", "Failed to register BouncyCastleProvider", e)
         }
 
-        // Route JSch logging to Logcat
-        JSch.setLogger(object : Logger {
-            override fun isEnabled(level: Int): Boolean = true
-            override fun log(level: Int, message: String?) {
-                Log.d("JSch", "[$level] $message")
-            }
-        })
+        // Route JSch logging to Logcat in debug builds only
+        if (BuildConfig.DEBUG) {
+            JSch.setLogger(object : Logger {
+                override fun isEnabled(level: Int): Boolean = true
+                override fun log(level: Int, message: String?) {
+                    Log.d("JSch", "[$level] $message")
+                }
+            })
+        }
 
         // Apply saved theme mode
         val prefs = getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
@@ -48,14 +50,17 @@ class HotBoiApp : Application() {
         // Initialize high priority notification channel
         NotificationHelper.createNotificationChannel(this)
 
-        TelemetryRepository.initialize(this)
+        // Warm telemetry history cache asynchronously off the main thread
+        Thread {
+            TelemetryRepository.initialize(applicationContext)
+        }.start()
         rescheduleBackgroundWork(this)
     }
 
     companion object {
         fun rescheduleBackgroundWork(context: Context) {
             val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
-            val isEnabled = prefs.getBoolean(SshCollector.KEY_BG_ENABLED, true)
+            val isEnabled = prefs.getBoolean(SshCollector.KEY_BG_ENABLED, false)
             val wm = WorkManager.getInstance(context)
 
             if (!isEnabled) {

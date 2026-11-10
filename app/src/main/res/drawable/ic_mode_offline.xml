@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Medusko Offline Local Cache Storage Icon -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3C7.58,3 4,4.79 4,7s3.58,4 8,4 8,-1.79 8,-4S16.42,3 12,3zM4,9v3c0,2.21 3.58,4 8,4s8,-1.79 8,-4V9c0,2.21 -3.58,4 -8,4S4,11.21 4,9zM4,14v3c0,2.21 3.58,4 8,4s8,-1.79 8,-4v-3c0,2.21 -3.58,4 -8,4S4,16.21 4,14z" />
+</vector>

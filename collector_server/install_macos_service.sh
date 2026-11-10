@@ -32,9 +32,9 @@ cat <<EOF > "${PLIST_PATH}"
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/hotboi_collector.log</string>
+    <string>${TARGET_DIR}/hotboi_collector.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/hotboi_collector.err</string>
+    <string>${TARGET_DIR}/hotboi_collector.err</string>
 </dict>
 </plist>
 EOF

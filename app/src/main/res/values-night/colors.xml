@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark Mode (Night) Colors - Modern high-contrast dark palette -->
-    <color name="bg_main">#0F172A</color>
-    <color name="bg_dark">#0F172A</color>
-    <color name="card_bg">#1E293B</color>
-    <color name="card_border">#334155</color>
-    <!-- Brand HotBoi Red (Dark Mode: Vibrant Hot Coral/Flame) -->
-    <color name="hotboi_brand">#FF5252</color>
-    <color name="primary_cyan">#38BDF8</color>
-    <color name="accent_emerald">#34D399</color>
+    <!-- Dark Mode (Night) Colors - Matching Lagatron & Keyboardy Dark Obsidian (#101216) & Medusko Blue -->
+    <color name="bg_main">#101216</color>
+    <color name="bg_dark">#222631</color>
+    <color name="card_bg">#191C23</color>
+    <color name="card_border">#2E3342</color>
+    <!-- Brand HotBoi Blue (Dark Mode: Vibrant Sky Blue #60A5FA) -->
+    <color name="hotboi_brand">#60A5FA</color>
+    <color name="primary_cyan">#60A5FA</color>
+    <color name="accent_emerald">#00C853</color>
     <color name="accent_purple">#C084FC</color>
     <color name="accent_amber">#FBBF24</color>
     <color name="text_beta">#FBBF24</color>
-    <color name="text_primary">#F8FAFC</color>
-    <color name="text_secondary">#94A3B8</color>
-    <color name="text_muted">#64748B</color>
-    <color name="console_bg">#090D16</color>
-    <color name="console_text">#38BDF8</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B8C2D4</color>
+    <color name="text_muted">#8B95A5</color>
+    <color name="console_bg">#0B0D11</color>
+    <color name="console_text">#60A5FA</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

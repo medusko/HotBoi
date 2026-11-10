@@ -19,13 +19,14 @@ from datetime import datetime
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
-SCRATCH_DIR = "/Users/lappy/.gemini/antigravity/brain/3b4910f6-c469-4f60-b843-af7def9df498/scratch"
+SCRATCH_DIR = BASE_DIR
 CSV_PATH = os.path.join(SCRATCH_DIR, "thermal_log.csv")
 HTML_PATH = os.path.join(PROJECT_DIR, "app/src/main/assets/dashboard.html")
 APK_PATH = os.path.join(PROJECT_DIR, "app/build/outputs/apk/debug/app-debug.apk")
 CHART_PATH = os.path.join(PROJECT_DIR, "app/src/main/assets/chart.min.js")
 
 os.makedirs(SCRATCH_DIR, exist_ok=True)
+telemetry_lock = threading.Lock()
 
 # Global last known good telemetry
 last_known = {
@@ -116,24 +117,27 @@ print(f"{optic_temp}|{c0}|{c1}|{ploam}|{rx_pwr}|{tx_pwr}|{bias}")
 """
     try:
         res = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "root@192.168.0.254", remote_script],
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "--", "root@192.168.0.254", remote_script],
             capture_output=True, text=True, timeout=8
         )
-        parts = res.stdout.strip().split("|")
+        raw_out = res.stdout.strip()
+        data_lines = [ln.strip() for ln in raw_out.splitlines() if "|" in ln]
+        last_line = data_lines[-1] if data_lines else raw_out
+        parts = last_line.split("|")
         if len(parts) == 7:
             optic_t, c0, c1, ploam, rx, tx, bias = parts
-            if optic_t: last_known["optic_temp"] = optic_t
-            if c0 and c0 not in ("0", "0.0"):
-                last_known["cpu0_temp"] = c0
-                last_known["cpu1_temp"] = c1
-            if ploam: last_known["ploam"] = ploam
-            if rx: last_known["rx_power"] = rx
-            if tx: last_known["tx_power"] = tx
-            if bias: last_known["bias_ma"] = bias
-            last_known["ping_ms"] = ping_ms
-            last_known["timestamp"] = ts
-
-            return dict(last_known)
+            with telemetry_lock:
+                if optic_t: last_known["optic_temp"] = optic_t
+                if c0 and c0 not in ("0", "0.0"):
+                    last_known["cpu0_temp"] = c0
+                    last_known["cpu1_temp"] = c1
+                if ploam: last_known["ploam"] = ploam
+                if rx: last_known["rx_power"] = rx
+                if tx: last_known["tx_power"] = tx
+                if bias: last_known["bias_ma"] = bias
+                last_known["ping_ms"] = ping_ms
+                last_known["timestamp"] = ts
+                return dict(last_known)
     except Exception as e:
         print(f"[{ts}] Poll note: {e}")
     return None
@@ -148,6 +152,8 @@ def background_poller():
         time.sleep(300)
 
 class HotBoiHTTPHandler(http.server.BaseHTTPRequestHandler):
+    timeout = 10
+
     def do_HEAD(self):
         self.do_GET()
 
@@ -175,7 +181,9 @@ class HotBoiHTTPHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(json.dumps(last_known).encode("utf-8"))
+            with telemetry_lock:
+                payload = json.dumps(last_known).encode("utf-8")
+            self.wfile.write(payload)
 
         elif self.path in ("/hotboi.apk", "/app.apk"):
             if os.path.exists(APK_PATH):
@@ -199,6 +207,10 @@ class HotBoiHTTPHandler(http.server.BaseHTTPRequestHandler):
         # Suppress noisy logs
         return
 
+class HotBoiThreadingTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
 def main():
     print("=" * 60)
     print("🔥 HotBoi Thermal Server & Android Host")
@@ -212,8 +224,7 @@ def main():
     t.start()
 
     # Start HTTP server
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), HotBoiHTTPHandler) as httpd:
+    with HotBoiThreadingTCPServer(("", PORT), HotBoiHTTPHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

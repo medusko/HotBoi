@@ -7,9 +7,9 @@ import java.io.File
 import java.io.InputStreamReader
 
 /**
- * High-performance persistence repository providing source-isolated telemetry caching.
- * Each collection mode (Direct SSH, macOS Server, Windows Server, Linux Server, Offline)
- * maintains its own dedicated historical store, preventing sample cross-contamination or loss.
+ * High-performance persistence repository providing source- and interface-isolated telemetry caching.
+ * Each collection mode and SFP+ port interface maintains its own dedicated historical store,
+ * preventing sample cross-contamination or stale seeded data in live modes.
  */
 object TelemetryRepository {
 
@@ -23,58 +23,99 @@ object TelemetryRepository {
         return prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
     }
 
-    private fun getFileName(mode: String): String {
-        return when (mode) {
-            SshCollector.MODE_MAC_SERVER -> "macos_server_history.json"
-            SshCollector.MODE_WIN_SERVER -> "windows_server_history.json"
-            SshCollector.MODE_LINUX_SERVER -> "linux_server_history.json"
-            SshCollector.MODE_OFFLINE -> "offline_history.json"
+    private fun resolveCacheKey(context: Context, mode: String): String {
+        if (mode == SshCollector.MODE_SSH) {
+            val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
+            val rawIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE)
+                ?: SshCollector.DEFAULT_SFP_INTERFACE
+            val safeIface = rawIface.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifBlank { SshCollector.DEFAULT_SFP_INTERFACE }
+            return "${SshCollector.MODE_SSH}_$safeIface"
+        }
+        return mode
+    }
+
+    private fun getFileName(cacheKey: String): String {
+        return when {
+            cacheKey == SshCollector.MODE_MAC_SERVER -> "macos_server_history.json"
+            cacheKey == SshCollector.MODE_WIN_SERVER -> "windows_server_history.json"
+            cacheKey == SshCollector.MODE_LINUX_SERVER -> "linux_server_history.json"
+            cacheKey == SshCollector.MODE_SERVER -> "remote_server_history.json"
+            cacheKey == SshCollector.MODE_OFFLINE -> "offline_history.json"
+            cacheKey.startsWith("${SshCollector.MODE_SSH}_") -> {
+                val iface = cacheKey.removePrefix("${SshCollector.MODE_SSH}_")
+                "direct_ssh_${iface}_history.json"
+            }
             else -> "direct_ssh_history.json"
         }
+    }
+
+    /**
+     * Filters out legacy bundled October 2026 CSV samples that were previously seeded into live SSH history.
+     */
+    private fun isBundledSeedSample(sample: TelemetrySample): Boolean {
+        return sample.timestamp.startsWith("2026-10-22") ||
+            sample.timestamp.startsWith("2026-10-23") ||
+            sample.timestamp.startsWith("2026-10-24") ||
+            sample.timestamp.startsWith("2026-10-25") ||
+            sample.timestamp.startsWith("2026-10-26")
     }
 
     @Synchronized
     fun initialize(context: Context, explicitMode: String? = null) {
         val mode = resolveMode(context, explicitMode)
-        if (modeCaches.containsKey(mode)) return
+        val cacheKey = resolveCacheKey(context, mode)
+        if (modeCaches.containsKey(cacheKey)) return
 
-        val fileName = getFileName(mode)
+        val fileName = getFileName(cacheKey)
         val file = File(context.filesDir, fileName)
         val loadedList = mutableListOf<TelemetrySample>()
+        var purgedSeedData = false
 
         if (file.exists()) {
             try {
                 val json = file.readText()
                 val type = object : TypeToken<List<TelemetrySample>>() {}.type
                 val list: List<TelemetrySample> = gson.fromJson(json, type) ?: emptyList()
-                loadedList.addAll(list)
+                if (mode == SshCollector.MODE_OFFLINE) {
+                    loadedList.addAll(list)
+                } else {
+                    val filtered = list.filterNot { isBundledSeedSample(it) }
+                    if (filtered.size != list.size) {
+                        purgedSeedData = true
+                    }
+                    loadedList.addAll(filtered)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        // Migrate existing unified history to Direct SSH if direct_ssh_history.json does not exist yet
-        if (loadedList.isEmpty() && mode == SshCollector.MODE_SSH) {
-            val legacyFile = File(context.filesDir, "telemetry_history.json")
-            if (legacyFile.exists()) {
+        // Migrate existing live samples from legacy direct_ssh_history.json for eth6, excluding seeded CSV rows
+        if (loadedList.isEmpty() && cacheKey == "${SshCollector.MODE_SSH}_eth6") {
+            val legacySshFile = File(context.filesDir, "direct_ssh_history.json")
+            if (legacySshFile.exists()) {
                 try {
-                    val json = legacyFile.readText()
+                    val json = legacySshFile.readText()
                     val type = object : TypeToken<List<TelemetrySample>>() {}.type
                     val list: List<TelemetrySample> = gson.fromJson(json, type) ?: emptyList()
-                    if (list.isNotEmpty()) {
-                        loadedList.addAll(list)
+                    val liveOnly = list.filterNot { isBundledSeedSample(it) }
+                    if (liveOnly.isNotEmpty()) {
+                        loadedList.addAll(liveOnly)
+                        purgedSeedData = true
                     }
                 } catch (_: Exception) {}
             }
         }
 
-        // Only seed Direct SSH from asset CSV if completely empty
-        if (loadedList.isEmpty() && mode == SshCollector.MODE_SSH) {
+        // Only seed OFFLINE mode from bundled asset CSV (never pollute live Direct SSH or Server modes)
+        if (loadedList.isEmpty() && mode == SshCollector.MODE_OFFLINE) {
             seedFromAssets(context, loadedList)
-            save(context, mode, loadedList)
+            save(context, cacheKey, loadedList)
+        } else if (purgedSeedData) {
+            save(context, cacheKey, loadedList)
         }
 
-        modeCaches[mode] = loadedList
+        modeCaches[cacheKey] = loadedList
     }
 
     private fun seedFromAssets(context: Context, targetList: MutableList<TelemetrySample>) {
@@ -112,40 +153,36 @@ object TelemetryRepository {
     @Synchronized
     fun addSample(context: Context, sample: TelemetrySample, explicitMode: String? = null) {
         val mode = resolveMode(context, explicitMode)
+        val cacheKey = resolveCacheKey(context, mode)
         initialize(context, mode)
-        val list = modeCaches[mode] ?: mutableListOf()
+        val list = modeCaches[cacheKey] ?: mutableListOf()
         list.add(sample)
         if (list.size > MAX_SAMPLES) {
             val trimCount = list.size - MAX_SAMPLES
-            for (i in 0 until trimCount) {
-                list.removeAt(0)
-            }
+            list.subList(0, trimCount).clear()
         }
-        modeCaches[mode] = list
-        save(context, mode, list)
+        modeCaches[cacheKey] = list
+        save(context, cacheKey, list)
     }
 
     @Synchronized
     fun setSamples(context: Context, newSamples: List<TelemetrySample>, explicitMode: String? = null) {
         val mode = resolveMode(context, explicitMode)
+        val cacheKey = resolveCacheKey(context, mode)
         initialize(context, mode)
         if (newSamples.isNotEmpty()) {
             val list = newSamples.takeLast(MAX_SAMPLES).toMutableList()
-            modeCaches[mode] = list
-            save(context, mode, list)
+            modeCaches[cacheKey] = list
+            save(context, cacheKey, list)
         }
     }
 
     @Synchronized
     fun getAllSamples(context: Context, explicitMode: String? = null): List<TelemetrySample> {
         val mode = resolveMode(context, explicitMode)
+        val cacheKey = resolveCacheKey(context, mode)
         initialize(context, mode)
-        val list = modeCaches[mode] ?: emptyList()
-        // If server mode cache is initially empty before network reply, provide fallback
-        if (list.isEmpty() && mode != SshCollector.MODE_SSH) {
-            initialize(context, SshCollector.MODE_SSH)
-            return ArrayList(modeCaches[SshCollector.MODE_SSH] ?: emptyList())
-        }
+        val list = modeCaches[cacheKey] ?: emptyList()
         return ArrayList(list)
     }
 
@@ -156,12 +193,17 @@ object TelemetryRepository {
     }
 
     @Synchronized
-    private fun save(context: Context, mode: String, list: List<TelemetrySample>) {
+    private fun save(context: Context, cacheKey: String, list: List<TelemetrySample>) {
         try {
-            val fileName = getFileName(mode)
+            val fileName = getFileName(cacheKey)
             val file = File(context.filesDir, fileName)
+            val tmpFile = File(context.filesDir, "$fileName.tmp")
             val json = gson.toJson(list)
-            file.writeText(json)
+            tmpFile.writeText(json, Charsets.UTF_8)
+            if (!tmpFile.renameTo(file)) {
+                tmpFile.copyTo(file, overwrite = true)
+                tmpFile.delete()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -195,12 +237,17 @@ object TelemetryRepository {
         }
 
         val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
-        val pingTargetLabel = prefs.getString(SshCollector.KEY_PING_TARGET_LABEL, "8.8.8.8 (Google)") ?: "8.8.8.8 (Google)"
-        val deviceName = prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME) ?: SshCollector.DEFAULT_DEVICE_NAME
+        val pingTargetLabel = prefs.getString(SshCollector.KEY_PING_TARGET_LABEL, "1.1.1.1 (Cloudflare)") ?: "1.1.1.1 (Cloudflare)"
+        val savedDevName = prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME) ?: SshCollector.DEFAULT_DEVICE_NAME
+        val deviceName = if (savedDevName == "UniFi Cloud Gateway Fiber (White Bean)") {
+            SshCollector.DEFAULT_DEVICE_NAME
+        } else {
+            savedDevName
+        }
         val portName = prefs.getString(SshCollector.KEY_SFP_PORT_LABEL, SshCollector.DEFAULT_SFP_PORT_LABEL) ?: SshCollector.DEFAULT_SFP_PORT_LABEL
 
         val sourceLabel = when (mode) {
-            SshCollector.MODE_WIN_SERVER -> "Windows Server (Desky • BETA)"
+            SshCollector.MODE_WIN_SERVER -> "Windows Server (BETA)"
             SshCollector.MODE_MAC_SERVER -> "macOS Server (BETA)"
             SshCollector.MODE_LINUX_SERVER -> "Linux Server (BETA)"
             SshCollector.MODE_SERVER -> "Remote Server (BETA)"
