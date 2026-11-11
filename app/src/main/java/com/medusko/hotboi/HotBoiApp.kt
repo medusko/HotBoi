@@ -38,6 +38,15 @@ class HotBoiApp : Application() {
             })
         }
 
+        // Initialize Google Mobile Ads SDK when advertising is enabled
+        if (BuildConfig.SHOW_ADS) {
+            try {
+                com.google.android.gms.ads.MobileAds.initialize(this) {}
+            } catch (e: Exception) {
+                Log.e("HotBoiApp", "Failed to initialize MobileAds", e)
+            }
+        }
+
         // Apply saved theme mode
         val prefs = getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
         val themeMode = prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM) ?: SshCollector.THEME_SYSTEM

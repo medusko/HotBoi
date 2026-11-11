@@ -39,7 +39,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("Boolean", "SHOW_ADS", "false")
+        buildConfigField("Boolean", "SHOW_ADS", "true")
     }
 
     signingConfigs {
@@ -107,6 +107,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.jsch)
     implementation(libs.gson)
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.79")
     testImplementation("junit:junit:4.13.2")
 }

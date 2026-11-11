@@ -24,6 +24,7 @@ import android.os.PowerManager
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -153,6 +154,7 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         applyNativeThemeColors()
         updateStatusBadgeForMode()
+        setupAds()
 
         // Load local asset dashboard
         binding.webView.loadUrl(LOCAL_URL)
@@ -1953,8 +1955,30 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private var adView: com.google.android.gms.ads.AdView? = null
+
+    private fun setupAds() {
+        if (!BuildConfig.SHOW_ADS) return
+        try {
+            val banner = com.google.android.gms.ads.AdView(this).apply {
+                setAdSize(com.google.android.gms.ads.AdSize.BANNER)
+                // Google's official Test Ad Unit ID for banners
+                adUnitId = "ca-app-pub-3940256099942544/6300978111"
+            }
+            adView = banner
+            binding.adContainer.removeAllViews()
+            binding.adContainer.addView(banner)
+            binding.adContainer.visibility = View.VISIBLE
+            val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
+            banner.loadAd(adRequest)
+        } catch (e: Exception) {
+            Log.e("HotBoi", "Failed to load AdView", e)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        adView?.resume()
         updateUnitButtonLabel()
         applyNativeThemeColors()
         refreshHandler.postDelayed(autoRefreshRunnable, AUTO_REFRESH_INTERVAL_MS)
@@ -1962,6 +1986,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        adView?.pause()
         refreshHandler.removeCallbacks(autoRefreshRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            adView?.destroy()
+            adView = null
+        } catch (e: Exception) {
+            Log.e("HotBoi", "Failed to destroy AdView", e)
+        }
     }
 }
