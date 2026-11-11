@@ -81,33 +81,34 @@ jobs:
     needs: [build-android]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+
+      - name: Generate Release Notes
+        run: |
+          TAG="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC2' }}"
+          if [[ -f "CHANGELOG.md" ]] && grep -q "## \[$TAG\]" CHANGELOG.md; then
+            awk "/## \[$TAG\]/{flag=1; next} /## \[/{flag=0} flag" CHANGELOG.md > release_notes.md
+          else
+            cat > release_notes.md << EOF
+          ### HotBoi $TAG 🔥
+          Standalone native Android companion application and thermal watchdog for UniFi Cloud Gateway & XGS-PON SFP+ optical transceiver.
+          EOF
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: HotBoi ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }} (Release Candidate 1) 🔥
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }}
+          name: HotBoi ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC2' }} 🔥
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC2' }}
           prerelease: true
           files: |
             HotBoi-Android-*.apk
-          body: |
-            ### HotBoi ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }} Release Candidate 1 🔥
-
-            Standalone native Android companion application and thermal watchdog for your UniFi Cloud Gateway (White Bean / UCG-Fiber) and XGS-PON SFP+ optical transceiver.
-
-            #### Release Candidate 1 Highlights:
-            - **✨ Information & Diagnostic Parity with Lagatron & Keyboardy**: Dedicated About HotBoi diagnostic screen with Hero identity card, live connection status bar, active optical port diagnostics, architecture pillars, and GitHub resource links.
-            - **☀️/🌙 1-Tap Quick Theme Toggle**: Added instant Sun/Moon theme switcher directly in the top app bar without having to open settings.
-            - **🎨 Modernized Vector Drawables**: Cleaned up top bar with crisp custom vector drawables and dynamic connection status dots.
-            - **📳 Tactile Haptic Feedback**: Subtle physical feedback on refreshes, °C/°F unit toggles, and dialog interactions.
-            - **🔋 Screen-Off Radio Power Optimizations**: Background auto-refresh respects device sleep states (`PowerManager.isInteractive`), avoiding Wi-Fi/cellular radio wakeups when the screen is dark.
-            - **📦 R8 Minification & Resource Shrinking**: Slashed release APK size by 50% (down to 5.0 MB) with faster cold boot times and optimized memory execution.
-
-            #### Downloads
-            - 📱 **Android**: `HotBoi-Android-${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0-RC1' }}.apk`
+          body_path: release_notes.md

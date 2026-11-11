@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.0.0-RC1.1] - 2026-11-04
+## [v1.0.0-RC2] - 2026-11-10
+
+### 🌟 Release Candidate 2 Highlights
+- **AdMob SDK & Google Ads Integration**:
+  - Integrated official Google Mobile Ads SDK with test banner support.
+  - Declared `AD_ID` permission and configured official AdMob application ID.
+- **Android 15 / API 36 Target**:
+  - Upgraded compileSdk and targetSdk to 36.
+  - Added fail-fast release signing verification.
+- **Penguin Mascot & Clean Production Icons**:
+  - Redesigned Linux server mascot vector art with distinct penguin features (beak, flippers, belly).
+  - Removed temporary RC2 branding badges from launcher drawables.
+- **Security & Privacy Hardening**:
+  - Removed default private key and scrubbed private key material from repository history.
+
+---
 
 ### 🌟 Release Candidate 1.1 Highlights
 - **Dual-Distribution & Play Store Compliance Foundation**:
