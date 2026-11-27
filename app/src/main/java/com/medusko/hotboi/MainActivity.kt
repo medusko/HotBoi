@@ -501,11 +501,11 @@ class MainActivity : AppCompatActivity() {
                 val lbl = if (binding.tvStatus.text?.toString()?.contains("(") == true) "Direct SSH ($sfpIface)" else "Direct SSH"
                 setStatusBadgeContent(lbl, R.drawable.ic_mode_ssh, tc.brandBlue)
             }
-            SshCollector.MODE_MAC_SERVER -> setStatusBadgeContent("macOS Server", R.drawable.ic_os_macos, tc.brandBlue)
-            SshCollector.MODE_WIN_SERVER -> setStatusBadgeContent("Windows Server", R.drawable.ic_os_windows, tc.brandBlue)
-            SshCollector.MODE_LINUX_SERVER -> setStatusBadgeContent("Linux Server", R.drawable.ic_os_linux, tc.brandBlue)
+            SshCollector.MODE_MAC_SERVER -> setStatusBadgeContent("macOS", R.drawable.ic_os_macos, tc.brandBlue)
+            SshCollector.MODE_WIN_SERVER -> setStatusBadgeContent("Windows", R.drawable.ic_os_windows, tc.brandBlue)
+            SshCollector.MODE_LINUX_SERVER -> setStatusBadgeContent("Linux", R.drawable.ic_os_linux, tc.brandBlue)
             SshCollector.MODE_SERVER -> setStatusBadgeContent("Server", R.drawable.ic_mode_server, tc.brandBlue)
-            else -> setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, tc.textSecondary)
+            else -> setStatusBadgeContent("Offline", R.drawable.ic_mode_offline, tc.textSecondary)
         }
     }
 
@@ -758,7 +758,7 @@ class MainActivity : AppCompatActivity() {
                 // Offline mode: zero network calls, read entirely from local cache
                 injectTelemetryIntoWebView()
                 binding.btnErrorLog.visibility = View.GONE
-                setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, getActiveThemeColors().textSecondary)
+                setStatusBadgeContent("Offline", R.drawable.ic_mode_offline, getActiveThemeColors().textSecondary)
                 binding.swipeRefresh.isRefreshing = false
                 binding.progressBar.visibility = View.GONE
             }
