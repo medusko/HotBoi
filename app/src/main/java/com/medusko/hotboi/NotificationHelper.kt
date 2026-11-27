@@ -141,7 +141,7 @@ object NotificationHelper {
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setColor(Color.parseColor("#EF4444"))
+            .setColor(Color.parseColor(if (isTest) "#2E6BD9" else "#FF1744"))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setDefaults(NotificationCompat.DEFAULT_ALL)

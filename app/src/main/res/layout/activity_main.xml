@@ -23,17 +23,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Title offset with distinct stylized HotBoi Red branding -->
+        <!-- App Title matching Keyboardy & Lagatron typography and onSurface contrast -->
         <TextView
             android:id="@+id/tvAppTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="6dp"
+            android:fontFamily="sans-serif-black"
             android:text="HotBoi"
-            android:textColor="@color/hotboi_brand"
-            android:textSize="20sp"
-            android:letterSpacing="0.02"
+            android:textColor="@color/text_primary"
+            android:textSize="21sp"
             android:textStyle="bold" />
 
         <!-- Mode Status Pill -->
@@ -48,7 +48,7 @@
             android:paddingHorizontal="9dp"
             android:paddingVertical="0dp"
             android:text="Direct SSH"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/accent_blue"
             android:textSize="11sp"
             android:textStyle="bold"
             android:clickable="true"
@@ -66,7 +66,7 @@
             android:paddingHorizontal="7dp"
             android:paddingVertical="0dp"
             android:text="°F"
-            android:textColor="@color/primary_cyan"
+            android:textColor="@color/accent_blue"
             android:textSize="11.5sp"
             android:textStyle="bold"
             android:clickable="true"
@@ -107,7 +107,7 @@
                 android:layout_height="16dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_warning"
-                app:tint="#EF4444" />
+                app:tint="@color/alert_red" />
         </FrameLayout>
 
         <!-- Vertical Separator Divider (|) between telemetry controls and meta controls -->

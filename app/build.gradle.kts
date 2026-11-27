@@ -34,8 +34,8 @@ android {
         applicationId = "com.medusko.hotboi"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.1-RC2-Beta"
+        versionCode = 8
+        versionName = "1.0.2-RC3-Beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

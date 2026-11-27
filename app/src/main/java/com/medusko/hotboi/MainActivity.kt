@@ -323,8 +323,10 @@ class MainActivity : AppCompatActivity() {
         val cardBg: Int,
         val cardBorder: Int,
         val brandBlue: Int,
+        val cobaltBlue: Int,
         val cyan: Int,
-        val emerald: Int,
+        val amber: Int,
+        val alertRed: Int,
         val textPrimary: Int,
         val textSecondary: Int,
         val textMuted: Int
@@ -339,9 +341,11 @@ class MainActivity : AppCompatActivity() {
                 cardBg = Color.parseColor("#191C23"),
                 cardBorder = Color.parseColor("#2E3342"),
                 brandBlue = Color.parseColor("#60A5FA"),
+                cobaltBlue = Color.parseColor("#2E6BD9"),
                 cyan = Color.parseColor("#60A5FA"),
-                emerald = Color.parseColor("#00C853"),
-                textPrimary = Color.parseColor("#FFFFFF"),
+                amber = Color.parseColor("#FBBF24"),
+                alertRed = Color.parseColor("#FF5252"),
+                textPrimary = Color.parseColor("#F1F3F8"),
                 textSecondary = Color.parseColor("#B8C2D4"),
                 textMuted = Color.parseColor("#8B95A5")
             )
@@ -352,8 +356,10 @@ class MainActivity : AppCompatActivity() {
                 cardBg = Color.parseColor("#FFFDF9"),
                 cardBorder = Color.parseColor("#DCD4C6"),
                 brandBlue = Color.parseColor("#2E6BD9"),
+                cobaltBlue = Color.parseColor("#2E6BD9"),
                 cyan = Color.parseColor("#2E6BD9"),
-                emerald = Color.parseColor("#00C853"),
+                amber = Color.parseColor("#B45309"),
+                alertRed = Color.parseColor("#DC2626"),
                 textPrimary = Color.parseColor("#1E1A16"),
                 textSecondary = Color.parseColor("#6B6358"),
                 textMuted = Color.parseColor("#948B7D")
@@ -387,8 +393,11 @@ class MainActivity : AppCompatActivity() {
         binding.topBarDivider.setBackgroundColor(tc.cardBorder)
         binding.webView.setBackgroundColor(tc.bgMain)
 
-        binding.tvAppTitle.setTextColor(tc.brandBlue)
-        binding.btnUnitToggle.setTextColor(tc.cyan)
+        binding.swipeRefresh.setColorSchemeColors(tc.brandBlue)
+        binding.swipeRefresh.setProgressBackgroundColorSchemeColor(tc.cardBg)
+
+        binding.tvAppTitle.setTextColor(tc.textPrimary)
+        binding.btnUnitToggle.setTextColor(tc.brandBlue)
 
         val pills = listOf(
             binding.tvStatus,
@@ -414,6 +423,7 @@ class MainActivity : AppCompatActivity() {
         binding.ivSettingsIcon.setColorFilter(tc.textPrimary)
 
         updateThemeIcon()
+        updateStatusBadgeForMode()
     }
 
     /**
@@ -459,8 +469,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * Helper to set a tinted Medusko vector icon on a TextView pill without emojis.
      */
-    private fun setStatusBadgeContent(label: String, iconRes: Int, colorHex: String) {
-        val colorInt = Color.parseColor(colorHex)
+    private fun setStatusBadgeContent(label: String, iconRes: Int, colorInt: Int) {
         binding.tvStatus.text = label
         binding.tvStatus.setTextColor(colorInt)
         val drawable = ContextCompat.getDrawable(this, iconRes)?.mutate()
@@ -475,17 +484,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Updates top-bar status pill to reflect the active collection mode using Medusko vector icons.
+     * Updates top-bar status pill to reflect the active collection mode using Medusko Cobalt/Sky Blue vector icons.
      */
     private fun updateStatusBadgeForMode() {
+        val tc = getActiveThemeColors()
         val mode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
+        if (binding.btnErrorLog.visibility == View.VISIBLE && mode != SshCollector.MODE_OFFLINE) {
+            val currentLabel = binding.tvStatus.text?.toString().orEmpty()
+            val errLabel = if (currentLabel.startsWith("Error") || currentLabel.startsWith("No Module")) currentLabel else "Error"
+            setStatusBadgeContent(errLabel, R.drawable.ic_warning, tc.alertRed)
+            return
+        }
         when (mode) {
-            SshCollector.MODE_SSH -> setStatusBadgeContent("Direct SSH", R.drawable.ic_mode_ssh, "#34D399")
-            SshCollector.MODE_MAC_SERVER -> setStatusBadgeContent("macOS Server", R.drawable.ic_os_macos, "#34D399")
-            SshCollector.MODE_WIN_SERVER -> setStatusBadgeContent("Windows Server", R.drawable.ic_os_windows, "#34D399")
-            SshCollector.MODE_LINUX_SERVER -> setStatusBadgeContent("Linux Server", R.drawable.ic_os_linux, "#34D399")
-            SshCollector.MODE_SERVER -> setStatusBadgeContent("Server", R.drawable.ic_mode_server, "#34D399")
-            else -> setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, "#94A3B8")
+            SshCollector.MODE_SSH -> {
+                val sfpIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: SshCollector.DEFAULT_SFP_INTERFACE
+                val lbl = if (binding.tvStatus.text?.toString()?.contains("(") == true) "Direct SSH ($sfpIface)" else "Direct SSH"
+                setStatusBadgeContent(lbl, R.drawable.ic_mode_ssh, tc.brandBlue)
+            }
+            SshCollector.MODE_MAC_SERVER -> setStatusBadgeContent("macOS Server", R.drawable.ic_os_macos, tc.brandBlue)
+            SshCollector.MODE_WIN_SERVER -> setStatusBadgeContent("Windows Server", R.drawable.ic_os_windows, tc.brandBlue)
+            SshCollector.MODE_LINUX_SERVER -> setStatusBadgeContent("Linux Server", R.drawable.ic_os_linux, tc.brandBlue)
+            SshCollector.MODE_SERVER -> setStatusBadgeContent("Server", R.drawable.ic_mode_server, tc.brandBlue)
+            else -> setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, tc.textSecondary)
         }
     }
 
@@ -611,7 +631,7 @@ class MainActivity : AppCompatActivity() {
                             NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
 
                             binding.btnErrorLog.visibility = View.GONE
-                            setStatusBadgeContent("Direct SSH ($sfpIface)", R.drawable.ic_mode_ssh, "#34D399")
+                            setStatusBadgeContent("Direct SSH ($sfpIface)", R.drawable.ic_mode_ssh, getActiveThemeColors().brandBlue)
                         } else {
                             val err = result.exceptionOrNull()
                             val msg = err?.message ?: "Unknown SSH Error"
@@ -626,7 +646,7 @@ class MainActivity : AppCompatActivity() {
                             } else {
                                 "Error (SSH)"
                             }
-                            setStatusBadgeContent(badgeLabel, R.drawable.ic_warning, "#EF4444")
+                            setStatusBadgeContent(badgeLabel, R.drawable.ic_warning, getActiveThemeColors().alertRed)
 
                             if (!isSilent) {
                                 showErrorDetailsDialog()
@@ -682,7 +702,7 @@ class MainActivity : AppCompatActivity() {
                                     NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
 
                                     binding.btnErrorLog.visibility = View.GONE
-                                    setStatusBadgeContent(serverName, R.drawable.ic_mode_server, "#34D399")
+                                    setStatusBadgeContent(serverName, R.drawable.ic_mode_server, getActiveThemeColors().brandBlue)
                                 }
 
                                 // Check ping target parity with server
@@ -722,7 +742,7 @@ class MainActivity : AppCompatActivity() {
                             binding.progressBar.visibility = View.GONE
                             binding.swipeRefresh.isRefreshing = false
                             binding.btnErrorLog.visibility = View.VISIBLE
-                            setStatusBadgeContent("Error ($serverName)", R.drawable.ic_warning, "#EF4444")
+                            setStatusBadgeContent("Error ($serverName)", R.drawable.ic_warning, getActiveThemeColors().alertRed)
 
                             if (!isSilent) {
                                 showErrorDetailsDialog()
@@ -738,7 +758,7 @@ class MainActivity : AppCompatActivity() {
                 // Offline mode: zero network calls, read entirely from local cache
                 injectTelemetryIntoWebView()
                 binding.btnErrorLog.visibility = View.GONE
-                setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, "#94A3B8")
+                setStatusBadgeContent("Offline (Cached)", R.drawable.ic_mode_offline, getActiveThemeColors().textSecondary)
                 binding.swipeRefresh.isRefreshing = false
                 binding.progressBar.visibility = View.GONE
             }
@@ -940,13 +960,13 @@ class MainActivity : AppCompatActivity() {
         }
         identityTitleRow.addView(TextView(this).apply {
             text = "HotBoi"
-            setTextColor(tc.brandBlue)
+            setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = Typeface.DEFAULT_BOLD
         })
         identityTitleRow.addView(TextView(this).apply {
-            text = "RC2"
-            setTextColor(Color.parseColor("#FF6D00"))
+            text = "RC3"
+            setTextColor(tc.amber)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dpToPx(6), dpToPx(1), dpToPx(6), dpToPx(1))
@@ -954,7 +974,7 @@ class MainActivity : AppCompatActivity() {
                 fillColor = tc.cardBg,
                 cornerRadiusPx = 5f * density,
                 strokeWidthPx = strokePx,
-                strokeColor = Color.parseColor("#FF6D00")
+                strokeColor = tc.amber
             )
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -996,9 +1016,9 @@ class MainActivity : AppCompatActivity() {
         }
         scrollContent.addView(bodyText)
 
-        // 2. Release Candidate 2 & What's New Section
+        // 2. Release Candidate 3 & What's New Section
         val whatsNewLabel = TextView(this).apply {
-            text = "Release Candidate 2 & What's New"
+            text = "Release Candidate 3 & What's New"
             setTextColor(tc.cyan)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -1031,11 +1051,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         val whatsNewText = TextView(this).apply {
-            text = "• Release Candidate 2: Live SSH SFP+ / SFP28 port discovery & per-port history isolation\n" +
+            text = "• Release Candidate 3: Unified Medusko Cobalt Blue, Warm Gold, Dark Obsidian & Warm Linen palette matching Keyboardy & Lagatron\n" +
+                    "• Live SSH SFP+ / SFP28 port discovery & per-port history isolation\n" +
                     "• Full-screen Settings & About dialogs with edge-to-edge system bar support\n" +
                     "• Custom Medusko vector iconography across UI & thermal push notifications\n" +
                     "• Instant zero-flash Light / Dark theme switching directly in top bar\n" +
-                    "• Live Direct SSH telemetry without legacy CSV seed data pollution\n" +
                     "• Hardware-agnostic gateway & optical transceiver configuration"
             setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
@@ -1195,9 +1215,9 @@ class MainActivity : AppCompatActivity() {
         }
         scrollContent.addView(legalText)
 
-        // 5. Version Footer (Matches Keyboardy RC2)
+        // 5. Version Footer (Matches Keyboardy & Lagatron RC3)
         val versionFooter = TextView(this).apply {
-            text = "HotBoi v$vName (Build $vCode) • Release Candidate 2 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
+            text = "HotBoi v$vName (Build $vCode) • Release Candidate 3 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
             setTextColor(tc.textSecondary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -1271,11 +1291,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
         tvActiveMode.text = modeText
+        tvActiveMode.setTextColor(tc.brandBlue)
         val iconDrawable = ContextCompat.getDrawable(this, modeIcon)?.mutate()
         if (iconDrawable != null) {
             val sizePx = dpToPx(15)
             iconDrawable.setBounds(0, 0, sizePx, sizePx)
-            DrawableCompat.setTint(iconDrawable, tc.emerald)
+            DrawableCompat.setTint(iconDrawable, tc.brandBlue)
             tvActiveMode.setCompoundDrawablesRelative(iconDrawable, null, null, null)
         }
 
@@ -1302,7 +1323,7 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
         }
         btnCloseDiagBottom.background = createRoundedDrawable(
-            fillColor = tc.brandBlue,
+            fillColor = tc.cobaltBlue,
             cornerRadiusPx = 8f * density
         )
 

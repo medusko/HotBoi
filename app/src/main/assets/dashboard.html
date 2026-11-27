@@ -8,32 +8,52 @@
   <style>
     :root {
       --bg: #101216;
+      --bg-variant: #222631;
       --card-bg: #191c23;
       --card-border: #2e3342;
-      --text-main: #ffffff;
+      --text-main: #f1f3f8;
       --text-sub: #b8c2d4;
       --text-muted: #8b95a5;
       --primary: #60a5fa;
-      --accent: #00c853;
+      --cobalt: #2e6bd9;
+      --accent: #fbbf24;
+      --accent-gold: #fbbf24;
+      --accent-indigo: #818cf8;
+      --accent-purple: #c084fc;
+      --accent-orange: #ff9100;
+      --alert-red: #ff1744;
+      --status-bg: rgba(46, 107, 217, 0.18);
+      --status-border: rgba(96, 165, 250, 0.42);
+      --status-text: #60a5fa;
       --grid-color: #2e3342;
       --x-grid-color: #191c23;
-      --badge-offline-bg: #191c23;
+      --badge-offline-bg: #222631;
       --badge-offline-text: #b8c2d4;
     }
 
     body.light-theme {
       --bg: #f6f1e8;
+      --bg-variant: #ece5d9;
       --card-bg: #fffdf9;
       --card-border: #dcd4c6;
       --text-main: #1e1a16;
       --text-sub: #6b6358;
       --text-muted: #948b7d;
       --primary: #2e6bd9;
-      --accent: #00c853;
+      --cobalt: #2e6bd9;
+      --accent: #b45309;
+      --accent-gold: #b45309;
+      --accent-indigo: #4f46e5;
+      --accent-purple: #7e22ce;
+      --accent-orange: #d97706;
+      --alert-red: #dc2626;
+      --status-bg: rgba(46, 107, 217, 0.12);
+      --status-border: rgba(46, 107, 217, 0.35);
+      --status-text: #2e6bd9;
       --grid-color: #dcd4c6;
       --x-grid-color: #ece5d9;
       --badge-offline-bg: #ece5d9;
-      --badge-offline-text: #1e1a16;
+      --badge-offline-text: #6b6358;
     }
 
     body {
@@ -70,10 +90,10 @@
       font-size: 24px;
       font-weight: 900;
       letter-spacing: -0.5px;
-      color: #60a5fa; /* Medusko Vibrant Blue */
+      color: var(--text-main);
     }
     body.light-theme .brand-logo-text {
-      color: #2e6bd9; /* Medusko Cobalt Blue */
+      color: var(--text-main);
     }
     .brand-tag {
       font-size: 11px;
@@ -137,8 +157,9 @@
       flex-wrap: wrap;
     }
     .status-badge {
-      background: #065f46;
-      color: #34d399;
+      background: var(--status-bg);
+      color: var(--status-text);
+      border: 1px solid var(--status-border);
       padding: 5px 12px;
       border-radius: 9999px;
       font-size: 12px;
@@ -148,8 +169,9 @@
       gap: 6px;
     }
     .light-theme .status-badge {
-      background: #d1fae5;
-      color: #065f46;
+      background: var(--status-bg);
+      color: var(--status-text);
+      border: 1px solid var(--status-border);
     }
     .info-badge {
       background: var(--card-bg);
@@ -234,9 +256,9 @@
       transition: all 0.15s ease;
     }
     .range-btn.active {
-      background: var(--card-bg);
-      color: var(--primary);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+      background: var(--cobalt);
+      color: #ffffff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.16);
     }
     .chart-box {
       position: relative;
@@ -254,7 +276,7 @@
         <span class="brand-logo-text">HotBoi</span>
         <span class="brand-tag">SFP+ Telemetry</span>
         <span class="status-badge" id="webServerBadge">
-          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#34d399;"></span>
+          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--status-text);"></span>
           <span>Live Server</span>
         </span>
       </div>
@@ -275,7 +297,7 @@
       </div>
       <div class="badges">
         <div class="status-badge" id="badgeState">
-          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#34d399;" id="dotState"></span>
+          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--status-text);" id="dotState"></span>
           <span id="valPloam">State O5.1 (Connected)</span>
         </div>
         <div class="info-badge" id="badgeSamples">Loading telemetry...</div>
@@ -286,22 +308,22 @@
     <div class="cards">
       <div class="card">
         <div class="card-label">OPTICAL TRANSCEIVER TEMP</div>
-        <div class="card-val" id="valOptic" style="color: #38bdf8;">--</div>
+        <div class="card-val" id="valOptic" style="color: var(--primary);">--</div>
         <div class="card-sub" id="subOptic">--</div>
       </div>
       <div class="card">
         <div class="card-label">CPU CORE 0</div>
-        <div class="card-val" id="valCpu0" style="color: #10b981;">--</div>
+        <div class="card-val" id="valCpu0" style="color: var(--accent-gold);">--</div>
         <div class="card-sub" id="subCpu0">--</div>
       </div>
       <div class="card">
         <div class="card-label">RX OPTICAL POWER</div>
-        <div class="card-val" id="valRx" style="color: #8b5cf6;">--</div>
+        <div class="card-val" id="valRx" style="color: var(--accent-purple);">--</div>
         <div class="card-sub" id="subRx">--</div>
       </div>
       <div class="card">
         <div class="card-label">PING LATENCY</div>
-        <div class="card-val" id="valPing" style="color: #f59e0b;">--</div>
+        <div class="card-val" id="valPing" style="color: var(--accent-orange);">--</div>
         <div class="card-sub" id="subPing">--</div>
       </div>
     </div>
@@ -365,17 +387,31 @@
     function getChartTheme() {
       if (isLightMode) {
         return {
-          grid: '#cbd5e1',
-          xGrid: '#f1f5f9',
-          ticks: '#475569',
-          legend: '#0f172a'
+          grid: '#dcd4c6',
+          xGrid: '#ece5d9',
+          ticks: '#6b6358',
+          legend: '#1e1a16',
+          optic: '#2e6bd9',
+          opticFill: 'rgba(46, 107, 217, 0.12)',
+          cpu0: '#b45309',
+          cpu1: '#4f46e5',
+          ping: '#d97706',
+          pingFill: 'rgba(217, 119, 6, 0.12)',
+          trip: '#dc2626'
         };
       }
       return {
-        grid: '#334155',
-        xGrid: '#1e293b',
-        ticks: '#94a3b8',
-        legend: '#f8fafc'
+        grid: '#2e3342',
+        xGrid: '#191c23',
+        ticks: '#b8c2d4',
+        legend: '#f1f3f8',
+        optic: '#60a5fa',
+        opticFill: 'rgba(96, 165, 250, 0.14)',
+        cpu0: '#fbbf24',
+        cpu1: '#818cf8',
+        ping: '#ff9100',
+        pingFill: 'rgba(255, 145, 0, 0.14)',
+        trip: '#ff1744'
       };
     }
 
@@ -410,7 +446,7 @@
             if (xPos >= chartArea.left && xPos <= chartArea.right) {
               // Draw vertical dashed line
               ctx.beginPath();
-              ctx.strokeStyle = isLightMode ? '#94a3b8' : '#64748b';
+              ctx.strokeStyle = isLightMode ? '#948b7d' : '#525b70';
               ctx.lineWidth = 1.5;
               ctx.setLineDash([4, 4]);
               ctx.moveTo(xPos, chartArea.top);
@@ -419,7 +455,7 @@
 
               // Draw date label badge
               ctx.setLineDash([]);
-              ctx.fillStyle = isLightMode ? '#0f172a' : '#38bdf8';
+              ctx.fillStyle = isLightMode ? '#2e6bd9' : '#60a5fa';
               ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
               ctx.textAlign = 'left';
 
@@ -448,8 +484,8 @@
           {
             label: 'Laser Optic (°C)',
             data: [],
-            borderColor: '#38bdf8',
-            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+            borderColor: '#60a5fa',
+            backgroundColor: 'rgba(96, 165, 250, 0.14)',
             fill: true,
             tension: 0.3,
             borderWidth: 2,
@@ -459,7 +495,7 @@
           {
             label: 'CPU Core 0 (°C)',
             data: [],
-            borderColor: '#10b981',
+            borderColor: '#fbbf24',
             fill: false,
             tension: 0.3,
             borderWidth: 2,
@@ -469,7 +505,7 @@
           {
             label: 'CPU Core 1 (°C)',
             data: [],
-            borderColor: '#a3e635',
+            borderColor: '#818cf8',
             fill: false,
             tension: 0.3,
             borderWidth: 1.5,
@@ -480,7 +516,7 @@
           {
             label: 'Trip Limit',
             data: [],
-            borderColor: '#ef4444',
+            borderColor: '#ff1744',
             borderDash: [5, 5],
             fill: false,
             pointRadius: 0,
@@ -496,16 +532,16 @@
           y: {
             min: 35,
             max: 90,
-            grid: { color: '#334155' },
+            grid: { color: '#2e3342' },
             ticks: { 
-              color: '#94a3b8',
+              color: '#b8c2d4',
               font: { weight: '600' }
             }
           },
           x: {
-            grid: { color: '#1e293b' },
+            grid: { color: '#191c23' },
             ticks: { 
-              color: '#94a3b8',
+              color: '#b8c2d4',
               font: { weight: '600' },
               maxTicksLimit: 14
             }
@@ -514,7 +550,7 @@
         plugins: {
           legend: { 
             labels: { 
-              color: '#f8fafc',
+              color: '#f1f3f8',
               font: { weight: '600' }
             } 
           }
@@ -532,8 +568,8 @@
           {
             label: 'Ping Latency (ms)',
             data: [],
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            borderColor: '#ff9100',
+            backgroundColor: 'rgba(255, 145, 0, 0.14)',
             fill: true,
             tension: 0.2,
             borderWidth: 2,
@@ -550,16 +586,16 @@
           y: {
             min: 0,
             max: 40,
-            grid: { color: '#334155' },
+            grid: { color: '#2e3342' },
             ticks: { 
-              color: '#94a3b8',
+              color: '#b8c2d4',
               font: { weight: '600' }
             }
           },
           x: {
-            grid: { color: '#1e293b' },
+            grid: { color: '#191c23' },
             ticks: { 
-              color: '#94a3b8',
+              color: '#b8c2d4',
               font: { weight: '600' },
               maxTicksLimit: 14
             }
@@ -568,7 +604,7 @@
         plugins: {
           legend: { 
             labels: { 
-              color: '#f8fafc',
+              color: '#f1f3f8',
               font: { weight: '600' }
             } 
           }
@@ -673,15 +709,20 @@
         window.tempChartInstance.data.labels = slicedLabels;
         window.tempChartInstance.data.fullTimestamps = slicedFullTs;
         window.tempChartInstance.data.datasets[0].label = "Laser Optic (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[0].borderColor = theme.optic;
+        window.tempChartInstance.data.datasets[0].backgroundColor = theme.opticFill;
         window.tempChartInstance.data.datasets[0].data = conv(slicedOptic);
 
         window.tempChartInstance.data.datasets[1].label = "CPU Core 0 (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[1].borderColor = theme.cpu0;
         window.tempChartInstance.data.datasets[1].data = conv(slicedCpu0);
 
         window.tempChartInstance.data.datasets[2].label = "CPU Core 1 (" + unitSym + ")";
+        window.tempChartInstance.data.datasets[2].borderColor = theme.cpu1;
         window.tempChartInstance.data.datasets[2].data = conv(slicedCpu1);
 
         window.tempChartInstance.data.datasets[3].label = dualThreshLabel + " Trip Limit";
+        window.tempChartInstance.data.datasets[3].borderColor = theme.trip;
         window.tempChartInstance.data.datasets[3].data = slicedLabels.map(function() { return threshVal; });
 
         window.tempChartInstance.options.scales.y.min = currentUnit === "F" ? 95 : 35;
@@ -700,6 +741,8 @@
         window.latencyChartInstance.data.labels = slicedLabels;
         window.latencyChartInstance.data.fullTimestamps = slicedFullTs;
         window.latencyChartInstance.data.datasets[0].label = "Ping Latency (ms)";
+        window.latencyChartInstance.data.datasets[0].borderColor = theme.ping;
+        window.latencyChartInstance.data.datasets[0].backgroundColor = theme.pingFill;
         window.latencyChartInstance.data.datasets[0].data = slicedPing;
 
         window.latencyChartInstance.options.scales.y.grid.color = theme.grid;
@@ -796,19 +839,19 @@
           // State Badge
           if (data.mode === "offline") {
             if (badgeState) {
-              badgeState.style.background = isLightMode ? "#e2e8f0" : "#1e293b";
-              badgeState.style.color = isLightMode ? "#1e293b" : "#94a3b8";
-              badgeState.style.border = isLightMode ? "1px solid #cbd5e1" : "1px solid #334155";
+              badgeState.style.background = isLightMode ? "#ece5d9" : "#222631";
+              badgeState.style.color = isLightMode ? "#6b6358" : "#b8c2d4";
+              badgeState.style.border = isLightMode ? "1px solid #dcd4c6" : "1px solid #2e3342";
             }
-            if (dotState) dotState.style.background = isLightMode ? "#475569" : "#94a3b8";
+            if (dotState) dotState.style.background = isLightMode ? "#948b7d" : "#8b95a5";
             if (valPloam) valPloam.textContent = "State " + (s.ploam || "O5.1") + " (Cached)";
           } else {
             if (badgeState) {
-              badgeState.style.background = isLightMode ? "#d1fae5" : "#065f46";
-              badgeState.style.color = isLightMode ? "#065f46" : "#34d399";
-              badgeState.style.border = "none";
+              badgeState.style.background = isLightMode ? "rgba(46, 107, 217, 0.12)" : "rgba(46, 107, 217, 0.18)";
+              badgeState.style.color = isLightMode ? "#2e6bd9" : "#60a5fa";
+              badgeState.style.border = isLightMode ? "1px solid rgba(46, 107, 217, 0.35)" : "1px solid rgba(96, 165, 250, 0.42)";
             }
-            if (dotState) dotState.style.background = isLightMode ? "#059669" : "#34d399";
+            if (dotState) dotState.style.background = isLightMode ? "#2e6bd9" : "#60a5fa";
             if (valPloam) valPloam.textContent = "State " + (s.ploam || "O5.1") + " (Connected)";
           }
 
@@ -838,11 +881,11 @@
           if (elSubPing) elSubPing.textContent = "Target: " + cleanTarget;
 
           if (badgeState) {
-            badgeState.style.background = isLightMode ? "#e2e8f0" : "#1e293b";
-            badgeState.style.color = isLightMode ? "#1e293b" : "#94a3b8";
-            badgeState.style.border = isLightMode ? "1px solid #cbd5e1" : "1px solid #334155";
+            badgeState.style.background = isLightMode ? "#ece5d9" : "#222631";
+            badgeState.style.color = isLightMode ? "#6b6358" : "#b8c2d4";
+            badgeState.style.border = isLightMode ? "1px solid #dcd4c6" : "1px solid #2e3342";
           }
-          if (dotState) dotState.style.background = isLightMode ? "#475569" : "#94a3b8";
+          if (dotState) dotState.style.background = isLightMode ? "#948b7d" : "#8b95a5";
           if (valPloam) valPloam.textContent = "Awaiting Live Probe (" + port + ")";
           if (elBadge) elBadge.textContent = "0 samples (" + (data.sourceLabel || modeLabel) + ")";
         }

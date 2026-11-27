@@ -75,8 +75,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="0.06"
                 android:text="HARDWARE &amp; SFP+ PORT"
-                android:textColor="@color/accent_emerald"
+                android:textColor="@color/accent_blue"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -177,8 +178,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="0.06"
                 android:text="DATA COLLECTION METHOD"
-                android:textColor="@color/accent_emerald"
+                android:textColor="@color/accent_blue"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -195,10 +197,11 @@
                     android:checked="true"
                     android:drawableStart="@drawable/ic_mode_ssh"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/accent_emerald"
+                    android:drawableTint="@color/accent_blue"
                     android:text="Direct SSH (Standalone from Phone)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbModeMacServer"
@@ -206,10 +209,11 @@
                     android:layout_height="wrap_content"
                     android:drawableStart="@drawable/ic_os_macos"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/primary_cyan"
+                    android:drawableTint="@color/accent_blue"
                     android:text="macOS Server Daemon (BETA)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbModeWinServer"
@@ -217,10 +221,11 @@
                     android:layout_height="wrap_content"
                     android:drawableStart="@drawable/ic_os_windows"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/primary_cyan"
+                    android:drawableTint="@color/accent_blue"
                     android:text="Windows Server Service (BETA)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbModeLinuxServer"
@@ -228,10 +233,11 @@
                     android:layout_height="wrap_content"
                     android:drawableStart="@drawable/ic_os_linux"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/primary_cyan"
+                    android:drawableTint="@color/accent_blue"
                     android:text="Linux Server Daemon (Debian / Ubuntu • BETA)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbModeOffline"
@@ -242,7 +248,8 @@
                     android:drawableTint="@color/text_secondary"
                     android:text="Offline / Cached Telemetry Only"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
             </RadioGroup>
 
             <!-- Direct SSH Configuration Section -->
@@ -261,8 +268,9 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:letterSpacing="0.06"
                     android:text="GATEWAY CONNECTION &amp; AUTH"
-                    android:textColor="@color/accent_emerald"
+                    android:textColor="@color/accent_blue"
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
@@ -425,11 +433,12 @@
                     android:layout_height="42dp"
                     android:layout_marginTop="10dp"
                     android:text="Test Connection"
-                    android:textColor="@color/accent_emerald"
+                    android:textColor="@color/accent_blue"
                     android:textSize="12sp"
+                    android:textStyle="bold"
                     app:icon="@drawable/ic_radar"
                     app:iconGravity="textStart"
-                    app:iconTint="@color/accent_emerald"
+                    app:iconTint="@color/accent_blue"
                     app:iconSize="16dp" />
             </LinearLayout>
 
@@ -451,8 +460,9 @@
                     android:id="@+id/tvServerSectionTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:letterSpacing="0.06"
                     android:text="MACOS SERVER ENDPOINT (BETA)"
-                    android:textColor="@color/accent_emerald"
+                    android:textColor="@color/accent_blue"
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
@@ -489,8 +499,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="0.06"
                 android:text="BACKGROUND AUTOMATION &amp; ALERTS"
-                android:textColor="@color/accent_emerald"
+                android:textColor="@color/accent_blue"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -502,7 +513,8 @@
                 android:checked="true"
                 android:text="Collect in background automatically"
                 android:textColor="@color/text_primary"
-                android:textSize="13sp" />
+                android:textSize="13sp"
+                app:buttonTint="@color/accent_blue" />
 
             <LinearLayout
                 android:id="@+id/layoutInterval"
@@ -632,8 +644,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="0.06"
                 android:text="APPEARANCE &amp; UNITS"
-                android:textColor="@color/accent_emerald"
+                android:textColor="@color/accent_blue"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -660,7 +673,8 @@
                     android:checked="true"
                     android:text="Celsius (°C)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbUnitFahrenheit"
@@ -669,7 +683,8 @@
                     android:layout_weight="1"
                     android:text="Fahrenheit (°F)"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
             </RadioGroup>
 
             <TextView
@@ -697,7 +712,8 @@
                     android:drawableTint="@color/text_secondary"
                     android:text="System Default"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbThemeLight"
@@ -705,10 +721,11 @@
                     android:layout_height="wrap_content"
                     android:drawableStart="@drawable/ic_light_mode"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/primary_cyan"
+                    android:drawableTint="@color/accent_blue"
                     android:text="Light Mode"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
 
                 <RadioButton
                     android:id="@+id/rbThemeDark"
@@ -716,10 +733,11 @@
                     android:layout_height="wrap_content"
                     android:drawableStart="@drawable/ic_dark_mode"
                     android:drawablePadding="8dp"
-                    android:drawableTint="@color/primary_cyan"
+                    android:drawableTint="@color/accent_blue"
                     android:text="Dark Mode"
                     android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    app:buttonTint="@color/accent_blue" />
             </RadioGroup>
 
         </LinearLayout>
@@ -755,15 +773,16 @@
 
         <Button
             android:id="@+id/btnSaveSettingsBottom"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.Button"
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_marginStart="8dp"
             android:layout_weight="1.5"
             android:text="Save &amp; Apply"
-            android:textColor="@color/accent_emerald"
+            android:textColor="@color/white"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            app:backgroundTint="@color/button_primary_bg" />
     </LinearLayout>
 
 </LinearLayout>
