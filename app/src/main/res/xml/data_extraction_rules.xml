@@ -2,8 +2,10 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="hotboi_prefs.xml" />
+        <exclude domain="file" path="." />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="hotboi_prefs.xml" />
+        <exclude domain="file" path="ssh_known_hosts" />
     </device-transfer>
 </data-extraction-rules>

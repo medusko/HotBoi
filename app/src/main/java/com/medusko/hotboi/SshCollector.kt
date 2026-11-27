@@ -2,12 +2,16 @@ package com.medusko.hotboi
 
 import android.content.Context
 import com.jcraft.jsch.ChannelExec
+import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.JSch
+import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStreamReader
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,10 +59,12 @@ object SshCollector {
     const val KEY_GATEWAY_USER = "gateway_user"
     const val KEY_GATEWAY_PASSWORD = "gateway_password"
     const val KEY_GATEWAY_SSH_KEY = "gateway_ssh_key"
+    const val KEY_PON_STICK_AUTO_IP = "pon_stick_auto_ip"
     const val KEY_SERVER_URL = "server_url"
     const val KEY_MAC_SERVER_URL = "mac_server_url"
     const val KEY_WIN_SERVER_URL = "win_server_url"
     const val KEY_LINUX_SERVER_URL = "linux_server_url"
+    const val KEY_SERVER_API_TOKEN = "server_api_token"
     const val KEY_BG_ENABLED = "bg_enabled"
     const val KEY_BG_INTERVAL_MIN = "bg_interval_min"
     const val KEY_ALERT_THRESHOLD = "alert_threshold"
@@ -81,189 +87,189 @@ object SshCollector {
     const val DEFAULT_SFP_INTERFACE = "eth6"
     const val DEFAULT_SFP_PORT_LABEL = "Port 7 SFP+ (eth6)"
 
+    private const val KNOWN_HOSTS_FILENAME = "ssh_known_hosts"
     private val SAFE_HOST_REGEX = Regex("^[a-zA-Z0-9][a-zA-Z0-9.:-]{0,252}$")
     private val SAFE_IFACE_REGEX = Regex("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}$")
 
-    fun buildRemoteScript(pingTarget: String, sfpInterface: String): String {
+    // Pooled foreground SSH session state
+    private val sessionLock = Any()
+    private var pooledSession: Session? = null
+    private var pooledSessionKey: String? = null
+
+    /**
+     * Pure POSIX `/bin/sh` + `awk` remote telemetry probe.
+     * - Zero `python3` dependency (compatible with UniFi OS, OpenWrt, BusyBox, EdgeOS, Debian/Alpine).
+     * - Runs single-packet ICMP ping concurrently with optical DOM read (~150 ms total execution).
+     * - Never mutates router IP addresses (`192.168.1.2/24`) unless [allowPonStickAutoIp] is explicitly enabled.
+     */
+    fun buildRemoteScript(
+        pingTarget: String,
+        sfpInterface: String,
+        allowPonStickAutoIp: Boolean = false
+    ): String {
         val safeTarget = if (pingTarget.matches(SAFE_HOST_REGEX)) pingTarget else DEFAULT_PING_TARGET
         val safeIface = if (sfpInterface.matches(SAFE_IFACE_REGEX)) sfpInterface else DEFAULT_SFP_INTERFACE
+        val autoPonFlag = if (allowPonStickAutoIp) "1" else "0"
 
-        return """python3 -c '
-import subprocess, re, os, glob, time
+        return """sh -c '
+IFACE="$safeIface"
+TARGET="$safeTarget"
+AUTO_PON="$autoPonFlag"
 
-iface = "$safeIface"
-target = "$safeTarget"
+net_path="/sys/class/net/${'$'}IFACE"
+if [ ! -e "${'$'}net_path" ]; then
+  echo "NO_IFACE|${'$'}IFACE"
+  exit 0
+fi
 
-ping_proc = subprocess.Popen(["ping", "-c", "2", "-W", "1", target], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+ping_tmp="/tmp/.hb_ping_${'$'}${'$'}"
+(ping -c 1 -W 1 "${'$'}TARGET" > "${'$'}ping_tmp" 2>/dev/null) &
+ping_pid=${'$'}!
 
-net_path = f"/sys/class/net/{iface}"
-if not os.path.exists(net_path):
-    try:
-        ping_proc.kill()
-    except Exception:
-        pass
-    print(f"NO_IFACE|{iface}")
-    raise SystemExit(0)
+operstate=$(cat "${'$'}net_path/operstate" 2>/dev/null || echo "unknown")
+carrier=$(cat "${'$'}net_path/carrier" 2>/dev/null || echo "0")
 
-try:
-    operstate = open(f"{net_path}/operstate").read().strip()
-except Exception:
-    operstate = "unknown"
+eth_out=$(ethtool -m "${'$'}IFACE" 2>/dev/null || true)
+optic_temp=$(printf "%s\n" "${'$'}eth_out" | awk -F":" "/Module temperature/ { if (match(\${'$'}2, /-?[0-9]+(\.[0-9]+)?/)) { print substr(\${'$'}2, RSTART, RLENGTH); exit } }")
+rx_pwr=$(printf "%s\n" "${'$'}eth_out" | awk -F"/" "/(Receiver signal average optical power|Rx power)[[:space:]]*:/ { if (match(\${'$'}2, /-?[0-9]+(\.[0-9]+)?/)) { print substr(\${'$'}2, RSTART, RLENGTH); exit } }")
+tx_pwr=$(printf "%s\n" "${'$'}eth_out" | awk -F"/" "/(Laser output power|Laser transmit average optical power)[[:space:]]*:/ { if (match(\${'$'}2, /-?[0-9]+(\.[0-9]+)?/)) { print substr(\${'$'}2, RSTART, RLENGTH); exit } }")
+bias=$(printf "%s\n" "${'$'}eth_out" | awk -F":" "/Laser bias current/ { if (match(\${'$'}2, /[0-9]+(\.[0-9]+)?/)) { print substr(\${'$'}2, RSTART, RLENGTH); exit } }")
 
-try:
-    carrier = open(f"{net_path}/carrier").read().strip()
-except Exception:
-    carrier = "0"
+if [ -z "${'$'}optic_temp" ]; then
+  for p in "${'$'}net_path"/device/hwmon/hwmon*/temp1_input; do
+    if [ -r "${'$'}p" ]; then
+      v=$(cat "${'$'}p" 2>/dev/null | tr -d "\r ")
+      case "${'$'}v" in ''|*[!0-9-]*) ;; *)
+        if [ "${'$'}v" -gt 0 ] 2>/dev/null; then
+          optic_temp=$(awk -v val="${'$'}v" "BEGIN { printf \"%.1f\", val / 1000.0 }")
+          break
+        fi
+      ;; esac
+    fi
+  done
+fi
 
-# 1. Read SFP/SFP+ DOM optical diagnostics via ethtool -m on the selected interface
-ethtool_out = subprocess.run(["ethtool", "-m", iface], capture_output=True, text=True).stdout
-temp_m = re.search(r"Module temperature\s+:\s+([-\d\.]+)\s+degrees C", ethtool_out)
-rx_m = re.search(r"Receiver signal average optical power\s+:\s+[\d\.]+\s+mW\s+/\s+([-\d\.]+)\s+dBm", ethtool_out)
-if not rx_m:
-    rx_m = re.search(r"Rx power\s+:\s+[\d\.]+\s+mW\s+/\s+([-\d\.]+)\s+dBm", ethtool_out)
-tx_m = re.search(r"Laser output power\s+:\s+[\d\.]+\s+mW\s+/\s+([-\d\.]+)\s+dBm", ethtool_out)
-if not tx_m:
-    tx_m = re.search(r"Laser transmit average optical power\s+:\s+[\d\.]+\s+mW\s+/\s+([-\d\.]+)\s+dBm", ethtool_out)
-bias_m = re.search(r"Laser bias current\s+:\s+([\d\.]+)\s+mA", ethtool_out)
+c0=""; c1=""; ploam=""
+has_stick_ip=0
+other_stick_ip=0
+ip_out=$(ip -4 -o addr show 2>/dev/null || true)
+if printf "%s\n" "${'$'}ip_out" | grep -q " ${'$'}IFACE .*192\.168\.1\.2/"; then
+  has_stick_ip=1
+elif printf "%s\n" "${'$'}ip_out" | grep -q "192\.168\.1\.2/"; then
+  other_stick_ip=1
+fi
 
-optic_temp = temp_m.group(1) if temp_m else ""
-rx_pwr = rx_m.group(1) if rx_m else ""
-tx_pwr = tx_m.group(1) if tx_m else ""
-bias = bias_m.group(1) if bias_m else ""
+if [ "${'$'}has_stick_ip" = "0" ] && [ "${'$'}other_stick_ip" = "0" ] && [ "${'$'}AUTO_PON" = "1" ]; then
+  if [ -n "${'$'}optic_temp" ] || [ "${'$'}carrier" = "1" ] || [ "${'$'}operstate" = "up" ]; then
+    ip addr add 192.168.1.2/24 dev "${'$'}IFACE" >/dev/null 2>&1 && has_stick_ip=1
+  fi
+fi
 
-# Fallback to kernel hwmon sensor bound specifically to this network interface if present
-if not optic_temp:
-    for p in glob.glob(f"{net_path}/device/hwmon/hwmon*/temp1_input"):
-        try:
-            v = int(open(p).read().strip())
-            if v > 0:
-                optic_temp = f"{v/1000.0:.1f}"
-                break
-        except Exception:
-            pass
+if [ "${'$'}has_stick_ip" = "1" ]; then
+  if ping -I "${'$'}IFACE" -c 1 -W 1 192.168.1.1 >/dev/null 2>&1; then
+    stick_out=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=2 -b 192.168.1.2 root@192.168.1.1 "cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp; pon psg" 2>/dev/null || true)
+    l1=$(printf "%s\n" "${'$'}stick_out" | sed -n "1p" | tr -d "\r ")
+    l2=$(printf "%s\n" "${'$'}stick_out" | sed -n "2p" | tr -d "\r ")
+    case "${'$'}l1" in ''|*[!0-9]*) ;; *) c0=$(awk -v val="${'$'}l1" "BEGIN { printf \"%.1f\", val / 1000.0 }") ;; esac
+    case "${'$'}l2" in ''|*[!0-9]*) ;; *) c1=$(awk -v val="${'$'}l2" "BEGIN { printf \"%.1f\", val / 1000.0 }") ;; esac
+    case "${'$'}stick_out" in
+      *current=51*) ploam="O5.1" ;;
+      *current=12*) ploam="O1.2" ;;
+      *) [ -n "${'$'}c0" ] && ploam="O5.1" ;;
+    esac
+  fi
+fi
 
-# 2. Check if an ONU / PON stick (192.168.1.1) is reachable specifically on THIS interface
-all_ip_out = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True).stdout
-iface_has_stick_subnet = False
-other_iface_has_stick_subnet = False
-for ln in all_ip_out.splitlines():
-    if "192.168.1.2/" in ln:
-        if f" {iface} " in ln:
-            iface_has_stick_subnet = True
-        else:
-            other_iface_has_stick_subnet = True
+if [ -z "${'$'}optic_temp" ] && [ -z "${'$'}c0" ]; then
+  if [ "${'$'}carrier" != "1" ] && [ "${'$'}operstate" != "up" ]; then
+    kill "${'$'}ping_pid" >/dev/null 2>&1 || true
+    rm -f "${'$'}ping_tmp"
+    echo "NO_MODULE|${'$'}IFACE|${'$'}operstate"
+    exit 0
+  fi
+fi
 
-if not iface_has_stick_subnet and not other_iface_has_stick_subnet and (optic_temp or carrier == "1" or operstate == "up"):
-    subprocess.run(["ip", "addr", "add", "192.168.1.2/24", "dev", iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    iface_has_stick_subnet = True
+if [ -z "${'$'}c0" ]; then
+  for tz in /sys/class/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input; do
+    if [ -r "${'$'}tz" ]; then
+      val=$(cat "${'$'}tz" 2>/dev/null | tr -d "\r ")
+      case "${'$'}val" in ''|*[!0-9-]*) ;; *)
+        if [ "${'$'}val" -ge 10000 ] 2>/dev/null && [ "${'$'}val" -le 125000 ] 2>/dev/null; then
+          t_fmt=$(awk -v v="${'$'}val" "BEGIN { printf \"%.1f\", v / 1000.0 }")
+          if [ -z "${'$'}c0" ]; then
+            c0="${'$'}t_fmt"
+          elif [ -z "${'$'}c1" ]; then
+            c1="${'$'}t_fmt"
+            break
+          fi
+        fi
+      ;; esac
+    fi
+  done
+  [ -n "${'$'}c0" ] && [ -z "${'$'}c1" ] && c1="${'$'}c0"
+fi
 
-c0, c1, ploam = "", "", ""
-if iface_has_stick_subnet:
-    # Verify 192.168.1.1 responds specifically via this interface
-    stick_ping = subprocess.run(["ping", "-I", iface, "-c", "1", "-W", "1", "192.168.1.1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if stick_ping.returncode == 0:
-        stick_out = subprocess.run([
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2", "-b", "192.168.1.2", "root@192.168.1.1",
-            "cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp; pon psg"
-        ], capture_output=True, text=True).stdout
-        lines = stick_out.strip().splitlines()
-        c0 = f"{int(lines[0])/1000:.1f}" if len(lines) > 0 and lines[0].isdigit() else ""
-        c1 = f"{int(lines[1])/1000:.1f}" if len(lines) > 1 and lines[1].isdigit() else ""
-        ploam = "O5.1" if "current=51" in stick_out else ("O1.2" if "current=12" in stick_out else ("O5.1" if c0 else ""))
+[ -z "${'$'}optic_temp" ] && [ -n "${'$'}c0" ] && optic_temp="${'$'}c0"
+if [ -z "${'$'}ploam" ]; then
+  if [ "${'$'}carrier" = "1" ] || [ "${'$'}operstate" = "up" ]; then
+    ploam="LINK UP"
+  else
+    ploam="STANDBY"
+  fi
+fi
 
-# 3. If no optical DOM temperature AND no PON stick responded on this interface,
-# check if the interface has an active module/carrier or is completely empty/unplugged
-if not optic_temp and not c0:
-    if carrier != "1" and operstate != "up":
-        try:
-            ping_proc.kill()
-        except Exception:
-            pass
-        print(f"NO_MODULE|{iface}|{operstate}")
-        raise SystemExit(0)
+wait "${'$'}ping_pid" 2>/dev/null || true
+ping_val=$(awk -F"=" "/avg/ { split(\${'$'}2, a, \"/\"); gsub(/[^0-9.]/, \"\", a[2]); if (a[2] != \"\") { print a[2]; exit } }" "${'$'}ping_tmp" 2>/dev/null)
+rm -f "${'$'}ping_tmp"
+[ -z "${'$'}ping_val" ] && ping_val="0.0"
 
-# 4. Universal Gateway CPU thermal fallback (for standard non-PON SFP+ modules or gateways without a stick at 192.168.1.1)
-if not c0:
-    gw_temps = []
-    for tz in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp")):
-        try:
-            val = int(open(tz).read().strip())
-            if 10000 <= val <= 125000:
-                gw_temps.append(val / 1000.0)
-        except Exception:
-            pass
-    if not gw_temps:
-        for hw in sorted(glob.glob("/sys/class/hwmon/hwmon*/temp*_input")):
-            try:
-                val = int(open(hw).read().strip())
-                if 10000 <= val <= 125000:
-                    gw_temps.append(val / 1000.0)
-            except Exception:
-                pass
-    if len(gw_temps) >= 1:
-        c0 = f"{gw_temps[0]:.1f}"
-    if len(gw_temps) >= 2:
-        c1 = f"{gw_temps[1]:.1f}"
-    elif c0:
-        c1 = c0
-
-if not optic_temp and c0:
-    optic_temp = c0
-
-if not ploam:
-    ploam = "LINK UP" if (carrier == "1" or operstate == "up") else "STANDBY"
-
-try:
-    ping_out = ping_proc.communicate(timeout=4)[0] or ""
-except Exception:
-    ping_proc.kill()
-    ping_out = ""
-p_m = re.search(r"avg.*?=\s*[\d\.]+/([\d\.]+)/", ping_out)
-ping_val = p_m.group(1) if p_m else "0.0"
-
-print(f"{optic_temp}|{c0}|{c1}|{ploam}|{rx_pwr}|{tx_pwr}|{bias}|{ping_val}")
+echo "${'$'}optic_temp|${'$'}c0|${'$'}c1|${'$'}ploam|${'$'}rx_pwr|${'$'}tx_pwr|${'$'}bias|${'$'}ping_val"
 '"""
     }
 
-    private fun buildDiscoveryScript(): String {
-        return """python3 -c '
-import os, glob, subprocess, re
-
-ports = []
-for p in sorted(glob.glob("/sys/class/net/*")):
-    iface = os.path.basename(p)
-    if iface == "lo" or iface.startswith(("veth", "br", "docker", "tun", "wg", "sit", "ip6", "gre", "erspan", "ifb", "teql", " wlan", "ra", "rai", "ap")):
-        continue
-    if not iface.startswith(("eth", "sfp", "en", "swp", "xe", "ten", "opt", "lan", "wan")):
-        continue
-    try:
-        state = open(f"{p}/operstate").read().strip()
-    except Exception:
-        state = "unknown"
-    out = subprocess.run(["ethtool", "-m", iface], capture_output=True, text=True, timeout=2).stdout
-    m = re.search(r"Module temperature\s+:\s+([-\d\.]+)\s+degrees C", out)
-    has_dom = "1" if ("Module temperature" in out or "Laser" in out or "Transceiver" in out or "Identifier" in out) else "0"
-    temp = m.group(1) if m else ""
-    print(f"PORT|{iface}|{state}|{has_dom}|{temp}")
+    /**
+     * Pure POSIX `/bin/sh` + `awk` port discovery script (no `python3` needed).
+     */
+    internal fun buildDiscoveryScript(): String {
+        return """sh -c '
+for p in /sys/class/net/*; do
+  [ -e "${'$'}p" ] || continue
+  iface=${'$'}{p##*/}
+  case "${'$'}iface" in
+    lo|veth*|br*|docker*|tun*|wg*|sit*|ip6*|gre*|erspan*|ifb*|teql*|wlan*|ra*|ap*) continue ;;
+    eth*|sfp*|en*|swp*|xe*|ten*|opt*|lan*|wan*) ;;
+    *) continue ;;
+  esac
+  state=$(cat "${'$'}p/operstate" 2>/dev/null || echo "unknown")
+  out=$(ethtool -m "${'$'}iface" 2>/dev/null || true)
+  temp=$(printf "%s\n" "${'$'}out" | awk -F":" "/Module temperature/ { if (match(\${'$'}2, /-?[0-9]+(\.[0-9]+)?/)) { print substr(\${'$'}2, RSTART, RLENGTH); exit } }")
+  has_dom="0"
+  case "${'$'}out" in
+    *"Module temperature"*|*"Laser"*|*"Transceiver"*|*"Identifier"*) has_dom="1" ;;
+  esac
+  echo "PORT|${'$'}iface|${'$'}state|${'$'}has_dom|${'$'}temp"
+done
 '"""
     }
 
     private class SshUserInfo(private val pass: String) : UserInfo, UIKeyboardInteractive {
         override fun getPassphrase(): String = ""
         override fun getPassword(): String = pass
-        override fun promptPassword(message: String?): Boolean = true
-        override fun promptPassphrase(message: String?): Boolean = true
+        override fun promptPassword(message: String?): Boolean = pass.isNotEmpty()
+        override fun promptPassphrase(message: String?): Boolean = false
         override fun promptYesNo(message: String?): Boolean {
-            // Reject immediately if the remote host identification has changed (MITM protection)
+            // Strictly reject changed host keys (MITM protection)
             if (message != null && (
                     message.contains("HostKey has been changed", ignoreCase = true) ||
                     message.contains("REMOTE HOST IDENTIFICATION HAS CHANGED", ignoreCase = true) ||
-                    message.contains("offending key", ignoreCase = true)
-                )) {
+                    message.contains("offending key", ignoreCase = true) ||
+                    message.contains("does not match", ignoreCase = true)
+                )
+            ) {
                 return false
             }
-            // Trust On First Use: Accept new unknown host key
-            return true
+            // Trust On First Use (TOFU): persist unknown host key into owner-only ssh_known_hosts
+            return message != null && message.contains("authenticity of host", ignoreCase = true)
         }
         override fun showMessage(message: String?) {}
         override fun promptKeyboardInteractive(
@@ -273,33 +279,213 @@ for p in sorted(glob.glob("/sys/class/net/*")):
             prompt: Array<out String>?,
             echo: BooleanArray?
         ): Array<String> {
-            if (prompt != null && prompt.isNotEmpty()) {
+            if (prompt != null && prompt.isNotEmpty() && pass.isNotEmpty()) {
                 return Array(prompt.size) { pass }
             }
             return emptyArray()
         }
     }
 
-    private fun configureKnownHosts(context: Context, jsch: JSch, session: com.jcraft.jsch.Session) {
-        val knownHostsFile = java.io.File(context.filesDir, "ssh_known_hosts")
+    /**
+     * Fail-closed known_hosts configuration: creates owner-only `ssh_known_hosts` and enforces `ask` (TOFU + strict pin).
+     * Never falls back to `StrictHostKeyChecking=no`.
+     */
+    private fun configureKnownHostsStrict(context: Context, jsch: JSch, session: Session) {
+        val knownHostsFile = File(context.filesDir, KNOWN_HOSTS_FILENAME)
         if (!knownHostsFile.exists()) {
-            try {
-                knownHostsFile.createNewFile()
-            } catch (_: Exception) {}
-        }
-        if (knownHostsFile.exists()) {
-            try {
-                jsch.setKnownHosts(knownHostsFile.absolutePath)
-                session.setConfig("StrictHostKeyChecking", "ask")
-            } catch (_: Exception) {
-                session.setConfig("StrictHostKeyChecking", "no")
+            if (!knownHostsFile.createNewFile()) {
+                throw SecurityException("Unable to initialize SSH known_hosts store")
             }
-        } else {
-            session.setConfig("StrictHostKeyChecking", "no")
+        }
+        knownHostsFile.setReadable(false, false)
+        knownHostsFile.setReadable(true, true)
+        knownHostsFile.setWritable(false, false)
+        knownHostsFile.setWritable(true, true)
+
+        jsch.setKnownHosts(knownHostsFile.absolutePath)
+        session.setConfig("StrictHostKeyChecking", "ask")
+        session.setConfig("HashKnownHosts", "no")
+    }
+
+    fun getKnownHostsSummary(context: Context): String {
+        val file = File(context.filesDir, KNOWN_HOSTS_FILENAME)
+        if (!file.exists()) return "No pinned SSH host keys yet (TOFU active)"
+        val entries = try {
+            file.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (entries.isEmpty()) return "No pinned SSH host keys yet (TOFU active)"
+        val jsch = JSch()
+        return try {
+            jsch.setKnownHosts(file.absolutePath)
+            val hkRepo = jsch.hostKeyRepository
+            val keys: Array<HostKey> = hkRepo.hostKey ?: emptyArray()
+            if (keys.isEmpty()) {
+                "${entries.size} pinned SSH host key(s)"
+            } else {
+                val first = keys.first()
+                "${keys.size} pinned host(s) • ${first.host} (${first.type} ${first.getFingerPrint(jsch)})"
+            }
+        } catch (_: Exception) {
+            "${entries.size} pinned SSH host key(s)"
         }
     }
 
-    fun collectViaSsh(context: Context): Result<TelemetrySample> {
+    fun clearKnownHosts(context: Context): Boolean {
+        closePooledSession()
+        val file = File(context.filesDir, KNOWN_HOSTS_FILENAME)
+        return try {
+            if (file.exists()) file.writeText("", Charsets.UTF_8)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun computeSessionAuthKey(host: String, port: Int, user: String, password: String, privateKey: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("$user@$host:$port|".toByteArray(Charsets.UTF_8))
+        digest.update(password.toByteArray(Charsets.UTF_8))
+        digest.update("|".toByteArray(Charsets.UTF_8))
+        digest.update(privateKey.toByteArray(Charsets.UTF_8))
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun createConnectedSession(
+        context: Context,
+        host: String,
+        port: Int,
+        user: String,
+        password: String,
+        privateKey: String,
+        connectTimeoutMs: Int
+    ): Session {
+        val jsch = JSch()
+        val keyToUse = privateKey.trim()
+        if (keyToUse.isNotBlank()) {
+            val keyBytes = keyToUse.toByteArray(Charsets.UTF_8)
+            try {
+                jsch.addIdentity("user_key", keyBytes, null, null)
+            } finally {
+                keyBytes.fill(0)
+            }
+        }
+
+        val session = jsch.getSession(user, host, port)
+        session.userInfo = SshUserInfo(password)
+        if (password.isNotBlank()) {
+            val passBytes = password.toByteArray(Charsets.UTF_8)
+            try {
+                session.setPassword(passBytes)
+            } finally {
+                passBytes.fill(0)
+            }
+        }
+
+        configureKnownHostsStrict(context, jsch, session)
+        session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
+        session.timeout = connectTimeoutMs
+        session.setServerAliveInterval(30_000)
+        session.setServerAliveCountMax(2)
+        session.connect(connectTimeoutMs)
+        return session
+    }
+
+    /**
+     * Executes a remote command over a pooled SSH session (reconnecting once transparently if stale).
+     */
+    private fun executeRemoteCommand(
+        context: Context,
+        host: String,
+        port: Int,
+        user: String,
+        password: String,
+        privateKey: String,
+        command: String,
+        timeoutMs: Int,
+        keepPooled: Boolean
+    ): Pair<String, String> {
+        if (!keepPooled) {
+            var oneshotSession: Session? = null
+            var channel: ChannelExec? = null
+            try {
+                oneshotSession = createConnectedSession(context, host, port, user, password, privateKey, timeoutMs)
+                channel = (oneshotSession.openChannel("exec") as ChannelExec).apply {
+                    setCommand(command)
+                    inputStream = null
+                }
+                val errStream = ByteArrayOutputStream()
+                channel.setErrStream(errStream)
+                val stdoutStream = channel.inputStream
+                channel.connect(timeoutMs)
+                val stdout = BufferedReader(InputStreamReader(stdoutStream, Charsets.UTF_8)).use { it.readText().trim() }
+                val stderr = errStream.toString(Charsets.UTF_8.name()).trim()
+                return stdout to stderr
+            } finally {
+                try { channel?.disconnect() } catch (_: Exception) {}
+                try { oneshotSession?.disconnect() } catch (_: Exception) {}
+            }
+        }
+
+        val authKey = computeSessionAuthKey(host, port, user, password, privateKey)
+        synchronized(sessionLock) {
+            for (attempt in 0..1) {
+                var channel: ChannelExec? = null
+                try {
+                    val active = pooledSession
+                    val session = if (active != null && active.isConnected && pooledSessionKey == authKey) {
+                        active
+                    } else {
+                        try { active?.disconnect() } catch (_: Exception) {}
+                        val fresh = createConnectedSession(context, host, port, user, password, privateKey, timeoutMs)
+                        pooledSession = fresh
+                        pooledSessionKey = authKey
+                        fresh
+                    }
+
+                    channel = (session.openChannel("exec") as ChannelExec).apply {
+                        setCommand(command)
+                        inputStream = null
+                    }
+                    val errStream = ByteArrayOutputStream()
+                    channel.setErrStream(errStream)
+                    val stdoutStream = channel.inputStream
+                    channel.connect(timeoutMs)
+                    val stdout = BufferedReader(InputStreamReader(stdoutStream, Charsets.UTF_8)).use { it.readText().trim() }
+                    val stderr = errStream.toString(Charsets.UTF_8.name()).trim()
+                    return stdout to stderr
+                } catch (e: Exception) {
+                    try { pooledSession?.disconnect() } catch (_: Exception) {}
+                    pooledSession = null
+                    pooledSessionKey = null
+                    if (attempt == 1 || (e.message?.contains("HostKey", ignoreCase = true) == true)) {
+                        throw e
+                    }
+                } finally {
+                    try { channel?.disconnect() } catch (_: Exception) {}
+                }
+            }
+            throw IllegalStateException("SSH session execution failed")
+        }
+    }
+
+    /**
+     * Closes any pooled foreground SSH session (invoked on Activity stop or credential changes).
+     */
+    fun closePooledSession() {
+        synchronized(sessionLock) {
+            try {
+                pooledSession?.disconnect()
+            } catch (_: Exception) {
+            } finally {
+                pooledSession = null
+                pooledSessionKey = null
+            }
+        }
+    }
+
+    fun collectViaSsh(context: Context, usePool: Boolean = true): Result<TelemetrySample> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val host = prefs.getString(KEY_GATEWAY_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
         val port = prefs.getInt(KEY_GATEWAY_PORT, DEFAULT_PORT)
@@ -308,41 +494,21 @@ for p in sorted(glob.glob("/sys/class/net/*")):
         val privateKey = CryptoHelper.decrypt(prefs.getString(KEY_GATEWAY_SSH_KEY, "") ?: "")
         val pingTarget = prefs.getString(KEY_PING_TARGET, DEFAULT_PING_TARGET) ?: DEFAULT_PING_TARGET
         val sfpIface = prefs.getString(KEY_SFP_INTERFACE, DEFAULT_SFP_INTERFACE) ?: DEFAULT_SFP_INTERFACE
-
-        val jsch = JSch()
-        var session: com.jcraft.jsch.Session? = null
-        var channel: ChannelExec? = null
+        val allowPonAutoIp = prefs.getBoolean(KEY_PON_STICK_AUTO_IP, false)
 
         return try {
-            val keyToUse = privateKey.trim()
-            if (keyToUse.isNotBlank()) {
-                jsch.addIdentity("user_key", keyToUse.toByteArray(Charsets.UTF_8), null, null)
-            }
-
-            session = jsch.getSession(user, host, port)
-            session.userInfo = SshUserInfo(password)
-            if (password.isNotBlank()) {
-                session.setPassword(password)
-            }
-
-            configureKnownHosts(context, jsch, session)
-            session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
-            session.timeout = 10000
-            session.connect(10000)
-
-            channel = session.openChannel("exec") as ChannelExec
-            channel.setCommand(buildRemoteScript(pingTarget, sfpIface))
-            channel.inputStream = null
-            val errStream = ByteArrayOutputStream()
-            channel.setErrStream(errStream)
-
-            val inputStream = channel.inputStream
-            channel.connect(10000)
-
-            val raw = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { reader ->
-                reader.readText().trim()
-            }
-            val stderrText = errStream.toString(Charsets.UTF_8.name()).trim()
+            val command = buildRemoteScript(pingTarget, sfpIface, allowPonAutoIp)
+            val (raw, stderrText) = executeRemoteCommand(
+                context = context,
+                host = host,
+                port = port,
+                user = user,
+                password = password,
+                privateKey = privateKey,
+                command = command,
+                timeoutMs = 10_000,
+                keepPooled = usePool
+            )
             val dataLine = raw.lineSequence().map { it.trim() }.lastOrNull { it.contains("|") } ?: raw
 
             if (dataLine.startsWith("NO_IFACE|")) {
@@ -407,13 +573,6 @@ for p in sorted(glob.glob("/sys/class/net/*")):
         } catch (e: Exception) {
             ErrorLogManager.logError("Direct SSH Error ($user@$host:$port)", e)
             Result.failure(e)
-        } finally {
-            try {
-                channel?.disconnect()
-            } catch (_: Exception) {}
-            try {
-                session?.disconnect()
-            } catch (_: Exception) {}
         }
     }
 
@@ -425,34 +584,18 @@ for p in sorted(glob.glob("/sys/class/net/*")):
         val password = CryptoHelper.decrypt(prefs.getString(KEY_GATEWAY_PASSWORD, ""))
         val privateKey = CryptoHelper.decrypt(prefs.getString(KEY_GATEWAY_SSH_KEY, "") ?: "")
 
-        val jsch = JSch()
-        var session: com.jcraft.jsch.Session? = null
-        var channel: ChannelExec? = null
-
         return try {
-            val keyToUse = privateKey.trim()
-            if (keyToUse.isNotBlank()) {
-                jsch.addIdentity("user_key", keyToUse.toByteArray(Charsets.UTF_8), null, null)
-            }
-
-            session = jsch.getSession(user, host, port)
-            session.userInfo = SshUserInfo(password)
-            if (password.isNotBlank()) {
-                session.setPassword(password)
-            }
-
-            configureKnownHosts(context, jsch, session)
-            session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
-            session.timeout = 8000
-            session.connect(8000)
-
-            channel = session.openChannel("exec") as ChannelExec
-            channel.setCommand(buildDiscoveryScript())
-            channel.inputStream = null
-            val inputStream = channel.inputStream
-            channel.connect(8000)
-
-            val raw = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { it.readText().trim() }
+            val (raw, _) = executeRemoteCommand(
+                context = context,
+                host = host,
+                port = port,
+                user = user,
+                password = password,
+                privateKey = privateKey,
+                command = buildDiscoveryScript(),
+                timeoutMs = 8_000,
+                keepPooled = true
+            )
             val list = mutableListOf<DiscoveredPort>()
             for (line in raw.lineSequence()) {
                 val trimmed = line.trim()
@@ -467,7 +610,6 @@ for p in sorted(glob.glob("/sys/class/net/*")):
                     }
                 }
             }
-            // Sort ports with optical DOM first, then UP interfaces, then by name
             val sorted = list.sortedWith(
                 compareByDescending<DiscoveredPort> { it.hasOpticDom }
                     .thenByDescending { it.operState.equals("up", ignoreCase = true) }
@@ -477,13 +619,6 @@ for p in sorted(glob.glob("/sys/class/net/*")):
         } catch (e: Exception) {
             ErrorLogManager.logError("Port Scan Failed ($user@$host:$port)", e)
             Result.failure(e)
-        } finally {
-            try {
-                channel?.disconnect()
-            } catch (_: Exception) {}
-            try {
-                session?.disconnect()
-            } catch (_: Exception) {}
         }
     }
 
@@ -495,34 +630,23 @@ for p in sorted(glob.glob("/sys/class/net/*")):
         val password = CryptoHelper.decrypt(prefs.getString(KEY_GATEWAY_PASSWORD, ""))
         val privateKey = CryptoHelper.decrypt(prefs.getString(KEY_GATEWAY_SSH_KEY, "") ?: "")
 
-        val jsch = JSch()
-        var session: com.jcraft.jsch.Session? = null
-
         return try {
-            val keyToUse = privateKey.trim()
-            if (keyToUse.isNotBlank()) {
-                jsch.addIdentity("user_key", keyToUse.toByteArray(Charsets.UTF_8), null, null)
-            }
-
-            session = jsch.getSession(user, host, port)
-            session.userInfo = SshUserInfo(password)
-            if (password.isNotBlank()) {
-                session.setPassword(password)
-            }
-
-            configureKnownHosts(context, jsch, session)
-            session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
-            session.timeout = 7000
-            session.connect(7000)
-
+            closePooledSession()
+            executeRemoteCommand(
+                context = context,
+                host = host,
+                port = port,
+                user = user,
+                password = password,
+                privateKey = privateKey,
+                command = "echo HOTBOI_OK",
+                timeoutMs = 7_000,
+                keepPooled = true
+            )
             Result.success("Connection Successful! Authenticated with $user@$host:$port")
         } catch (e: Exception) {
             ErrorLogManager.logError("Test Connection Failed ($user@$host:$port)", e)
             Result.failure(e)
-        } finally {
-            try {
-                session?.disconnect()
-            } catch (_: Exception) {}
         }
     }
 }

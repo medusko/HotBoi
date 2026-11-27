@@ -1,0 +1,9 @@
+# HotBoi Baseline Profile Rules — pre-compile startup, crypto, SSH & repository hot paths
+HSPLcom/medusko/hotboi/HotBoiApp;->**(**)**
+HSPLcom/medusko/hotboi/MainActivity;->**(**)**
+HSPLcom/medusko/hotboi/TelemetryRepository;->**(**)**
+HSPLcom/medusko/hotboi/TelemetrySample;->**(**)**
+HSPLcom/medusko/hotboi/CryptoHelper;->**(**)**
+HSPLcom/medusko/hotboi/SshCollector;->**(**)**
+HSPLcom/medusko/hotboi/CollectorHttpClient;->**(**)**
+HSPLcom/medusko/hotboi/NotificationHelper;->**(**)**

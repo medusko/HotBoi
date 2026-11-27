@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -22,7 +21,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.text.Editable
-import android.text.TextUtils
 import android.text.TextWatcher
 import android.util.Log
 import android.util.TypedValue
@@ -35,6 +33,7 @@ import android.view.Window
 import android.view.WindowManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -43,7 +42,6 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -58,61 +56,46 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.gson.Gson
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.medusko.hotboi.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * MainActivity: Primary UI controller for HotBoi Universal SFP+ Thermal Telemetry.
- *
- * Architecture & Features:
- * 1. Hybrid Native & WebView UI: Native top-bar controls + Chart.js responsive dashboard.
- * 2. Instant Theme Engine: Zero-flash, in-place switching between Light Mode and Dark Mode.
- * 3. Multi-Mode Telemetry:
- *    - Direct SSH (BouncyCastle Ed25519 authenticated direct from phone to gateway/switch).
- *    - macOS Server Daemon (BETA).
- *    - Windows 10/11 Server Background Service (BETA).
- *    - Linux Server Daemon for Debian / Ubuntu (BETA).
- *    - Offline Cached Telemetry (local history).
- * 4. Dynamic SFP+ Port Discovery & Per-Port History Isolation.
- * 5. Dual Temperature Units: Instant one-tap conversion between Celsius (°C) and Fahrenheit (°F).
- * 6. High-Priority Push Alerts: Medusko-branded notification upon crossing thermal trip limit.
- * 7. About HotBoi Diagnostic & Information Screen matching Medusko design systems.
- * 8. Full-Screen Settings & Setup experience.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
+    private lateinit var assetLoader: WebViewAssetLoader
     private val refreshHandler = Handler(Looper.getMainLooper())
     private var isPageLoaded = false
+    private var loadedCacheKey: String? = null
     private var hasPromptedPingMismatch = false
     private var hasPerformedInitialRefresh = false
     private var isShowingFirstLaunchDialog = false
 
     companion object {
-        private const val LOCAL_URL = "file:///android_asset/dashboard.html"
+        private const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
+        private const val LOCAL_DASHBOARD_URL = "$ASSET_ORIGIN/assets/dashboard.html"
         private const val AUTO_REFRESH_INTERVAL_MS = 60_000L
         private const val KEY_FIRST_LAUNCH = "first_launch_done"
     }
 
-    /**
-     * ActivityResultLauncher for Android 13+ (API 33+) POST_NOTIFICATIONS runtime permission.
-     */
     private val requestNotificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
@@ -120,10 +103,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    /**
-     * Periodic foreground auto-refresh runnable executing every 60 seconds.
-     * Screen & radio power aware: Skips network polling when device screen is turned off.
-     */
     private val autoRefreshRunnable = object : Runnable {
         override fun run() {
             val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -141,10 +120,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
 
-        // Migrate legacy hardcoded default device name to generic label
         if (prefs.getString(SshCollector.KEY_DEVICE_NAME, null) == "UniFi Cloud Gateway Fiber (White Bean)") {
-            prefs.edit().putString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME).apply()
+            prefs.edit { putString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME) }
         }
 
         checkAndRequestNotificationPermission()
@@ -156,13 +137,11 @@ class MainActivity : AppCompatActivity() {
         updateStatusBadgeForMode()
         setupAds()
 
-        // Load local asset dashboard
-        binding.webView.loadUrl(LOCAL_URL)
+        binding.webView.loadUrl(LOCAL_DASHBOARD_URL)
 
-        // Trigger welcome initial setup screen on first run
         if (!prefs.getBoolean(KEY_FIRST_LAUNCH, false)) {
             isShowingFirstLaunchDialog = true
-            prefs.edit().putBoolean(KEY_FIRST_LAUNCH, true).apply()
+            prefs.edit { putBoolean(KEY_FIRST_LAUNCH, true) }
             showSettingsDialog(isFirstLaunch = true)
         }
     }
@@ -173,9 +152,6 @@ class MainActivity : AppCompatActivity() {
         updateWebViewDisplayPreferences()
     }
 
-    /**
-     * Requests runtime notification permission on Android 13+ devices.
-     */
     private fun checkAndRequestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -184,9 +160,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Handles edge-to-edge system insets (status bar cutout, navigation bar).
-     */
     private fun setupWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootLayout) { _, insets ->
             val statusBar = insets.getInsets(WindowInsetsCompat.Type.statusBars())
@@ -197,8 +170,8 @@ class MainActivity : AppCompatActivity() {
 
             binding.topBar.updatePadding(
                 top = topInset + 4,
-                left = statusBar.left,
-                right = statusBar.right
+                left = maxOf(dpToPx(12), statusBar.left),
+                right = maxOf(dpToPx(12), statusBar.right)
             )
             binding.webView.updatePadding(
                 bottom = navBar.bottom
@@ -207,9 +180,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Back navigation handler ensuring in-WebView navigation before activity finish.
-     */
     private fun setupBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -225,7 +195,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Configures Android WebView with adaptive theming and zero splash flash.
+     * Configures hardened Android WebView served over virtual HTTPS [WebViewAssetLoader] origin.
+     * Blocks all file://, content://, mixed-content, and external network requests inside the WebView.
      */
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
@@ -234,6 +205,7 @@ class MainActivity : AppCompatActivity() {
         settings.domStorageEnabled = true
         settings.allowFileAccess = false
         settings.allowContentAccess = false
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
         settings.builtInZoomControls = true
@@ -245,16 +217,30 @@ class MainActivity : AppCompatActivity() {
         binding.webView.webChromeClient = object : android.webkit.WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("HotBoiJS", "${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
+                    Log.d("HotBoiJS", "${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
                 }
                 return true
             }
         }
 
         binding.webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val url = request?.url ?: return null
+                val intercepted = assetLoader.shouldInterceptRequest(url)
+                if (intercepted != null) return intercepted
+                // Block all external network fetches inside the dashboard WebView
+                return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url ?: return true
+                return url.host != "appassets.androidplatform.net"
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 isPageLoaded = true
+                loadedCacheKey = null
                 binding.swipeRefresh.isRefreshing = false
                 binding.progressBar.visibility = View.GONE
 
@@ -272,20 +258,29 @@ class MainActivity : AppCompatActivity() {
                 error: WebResourceError?
             ) {
                 super.onReceivedError(view, request, error)
-                binding.swipeRefresh.isRefreshing = false
-                binding.progressBar.visibility = View.GONE
+                if (request?.isForMainFrame == true) {
+                    binding.swipeRefresh.isRefreshing = false
+                    binding.progressBar.visibility = View.GONE
+                }
             }
         }
     }
 
-    /**
-     * Converts density-independent pixels to device pixels.
-     */
+    private fun postJsonMessageToWebView(jsonPayload: String, fallbackJsCall: String) {
+        if (!isPageLoaded || isFinishing || isDestroyed) return
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.POST_WEB_MESSAGE)) {
+            WebViewCompat.postWebMessage(
+                binding.webView,
+                WebMessageCompat(jsonPayload),
+                Uri.parse(ASSET_ORIGIN)
+            )
+        } else {
+            binding.webView.evaluateJavascript(fallbackJsCall, null)
+        }
+    }
+
     private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
 
-    /**
-     * Creates a rounded corner GradientDrawable with optional border stroke.
-     */
     private fun createRoundedDrawable(
         fillColor: Int,
         cornerRadiusPx: Float,
@@ -302,9 +297,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Determines whether dark / night mode is actively rendered.
-     */
     private fun isNightModeActive(): Boolean {
         val themeMode = prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM)
         return when (themeMode) {
@@ -367,9 +359,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Applies native colors and icons in-place without activity recreation or screen flash.
-     */
     private fun applyNativeThemeColors() {
         val isNight = isNightModeActive()
         val tc = getActiveThemeColors()
@@ -387,11 +376,8 @@ class MainActivity : AppCompatActivity() {
             isAppearanceLightNavigationBars = !isNight
         }
 
-        binding.rootLayout.setBackgroundColor(tc.bgMain)
-        binding.topBar.setBackgroundColor(tc.bgMain)
         binding.divider.setBackgroundColor(tc.cardBorder)
         binding.topBarDivider.setBackgroundColor(tc.cardBorder)
-        binding.webView.setBackgroundColor(tc.bgMain)
 
         binding.swipeRefresh.setColorSchemeColors(tc.brandBlue)
         binding.swipeRefresh.setProgressBackgroundColorSchemeColor(tc.cardBg)
@@ -426,10 +412,6 @@ class MainActivity : AppCompatActivity() {
         updateStatusBadgeForMode()
     }
 
-    /**
-     * Updates top-bar theme toggle button icon to reflect current UI state:
-     * Light mode shows Sun icon, Dark mode shows Moon icon.
-     */
     private fun updateThemeIcon() {
         val isNight = isNightModeActive()
         binding.ivThemeIcon.setImageResource(
@@ -437,13 +419,10 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    /**
-     * 1-Tap quick toggle between Dark Mode and Light Mode with zero activity flash.
-     */
     private fun toggleTheme() {
         val isNight = isNightModeActive()
         val newTheme = if (isNight) SshCollector.THEME_LIGHT else SshCollector.THEME_DARK
-        prefs.edit().putString(SshCollector.KEY_THEME_MODE, newTheme).apply()
+        prefs.edit { putString(SshCollector.KEY_THEME_MODE, newTheme) }
 
         when (newTheme) {
             SshCollector.THEME_LIGHT -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
@@ -458,17 +437,11 @@ class MainActivity : AppCompatActivity() {
         ).show()
     }
 
-    /**
-     * Updates top-bar toggle button label to reflect active temperature unit (°C or °F).
-     */
     private fun updateUnitButtonLabel() {
         val current = prefs.getString(SshCollector.KEY_TEMP_UNIT, SshCollector.UNIT_CELSIUS) ?: SshCollector.UNIT_CELSIUS
         binding.btnUnitToggle.text = if (current == SshCollector.UNIT_FAHRENHEIT) "°F" else "°C"
     }
 
-    /**
-     * Helper to set a tinted Medusko vector icon on a TextView pill without emojis.
-     */
     private fun setStatusBadgeContent(label: String, iconRes: Int, colorInt: Int) {
         binding.tvStatus.text = label
         binding.tvStatus.setTextColor(colorInt)
@@ -483,9 +456,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Updates top-bar status pill to reflect the active collection mode using Medusko Cobalt/Sky Blue vector icons.
-     */
     private fun updateStatusBadgeForMode() {
         val tc = getActiveThemeColors()
         val mode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
@@ -498,7 +468,7 @@ class MainActivity : AppCompatActivity() {
         when (mode) {
             SshCollector.MODE_SSH -> {
                 val sfpIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: SshCollector.DEFAULT_SFP_INTERFACE
-                val lbl = if (binding.tvStatus.text?.toString()?.contains("(") == true) "Direct SSH ($sfpIface)" else "Direct SSH"
+                val lbl = if (binding.tvStatus.text?.toString()?.contains("(") == true) "SSH ($sfpIface)" else "Direct SSH"
                 setStatusBadgeContent(lbl, R.drawable.ic_mode_ssh, tc.brandBlue)
             }
             SshCollector.MODE_MAC_SERVER -> setStatusBadgeContent("macOS", R.drawable.ic_os_macos, tc.brandBlue)
@@ -509,32 +479,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Attaches click listeners for all interactive top-bar controls.
-     */
     private fun setupListeners() {
         updateUnitButtonLabel()
         updateThemeIcon()
 
-        // One-tap quick toggle between Celsius and Fahrenheit
         binding.btnUnitToggle.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val current = prefs.getString(SshCollector.KEY_TEMP_UNIT, SshCollector.UNIT_CELSIUS) ?: SshCollector.UNIT_CELSIUS
             val newUnit = if (current == SshCollector.UNIT_CELSIUS) SshCollector.UNIT_FAHRENHEIT else SshCollector.UNIT_CELSIUS
-            prefs.edit().putString(SshCollector.KEY_TEMP_UNIT, newUnit).apply()
+            prefs.edit { putString(SshCollector.KEY_TEMP_UNIT, newUnit) }
             updateUnitButtonLabel()
             updateWebViewDisplayPreferences()
             val label = if (newUnit == SshCollector.UNIT_FAHRENHEIT) "Switched to Fahrenheit (°F)" else "Switched to Celsius (°C)"
             Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
 
-        // About HotBoi Dialog trigger
         binding.btnAbout.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             showAboutHotBoiDialog()
         }
 
-        // 1-Tap quick Light / Dark Theme Toggle (Sun in Dark, Moon in Light)
         binding.btnThemeToggle.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             toggleTheme()
@@ -567,10 +531,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Fast in-place WebView display update for unit (°C/°F) and theme (Light/Dark) toggles,
-     * avoiding full 2,500-sample JSON re-serialization on every tap.
-     */
     private fun updateWebViewDisplayPreferences() {
         if (!isPageLoaded) {
             injectTelemetryIntoWebView()
@@ -578,31 +538,47 @@ class MainActivity : AppCompatActivity() {
         }
         val unit = prefs.getString(SshCollector.KEY_TEMP_UNIT, SshCollector.UNIT_CELSIUS) ?: SshCollector.UNIT_CELSIUS
         val isLight = !isNightModeActive()
-        binding.webView.evaluateJavascript("window.applyDisplayPreferences('$unit', $isLight);") { result ->
-            if (result != "true") {
-                injectTelemetryIntoWebView()
-            }
-        }
+        val msg = JSONObject().apply {
+            put("type", "prefs")
+            put("tempUnit", unit)
+            put("isLight", isLight)
+        }.toString()
+        postJsonMessageToWebView(msg, "window.applyDisplayPreferences('$unit', $isLight);")
     }
 
     /**
-     * Serializes telemetry bundle from local cache on background dispatcher and invokes JS render hook in WebView.
+     * Sends full historical bundle to WebView (used on initial load or when mode/interface changes).
      */
     private fun injectTelemetryIntoWebView() {
         val mode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
+        val targetCacheKey = TelemetryRepository.resolveCacheKey(this, mode)
         lifecycleScope.launch(Dispatchers.IO) {
             val bundleJson = TelemetryRepository.toJsonBundle(this@MainActivity, mode)
             withContext(Dispatchers.Main) {
-                if (isPageLoaded && !isFinishing && !isDestroyed) {
-                    binding.webView.evaluateJavascript("window.renderDashboardWithData($bundleJson);", null)
-                }
+                loadedCacheKey = targetCacheKey
+                postJsonMessageToWebView(bundleJson, "window.renderDashboardWithData($bundleJson);")
             }
         }
     }
 
     /**
-     * Triggers telemetry poll across configured mode (Direct SSH, macOS, Windows, Linux, or Offline).
+     * Sends a ~300-byte single-sample incremental delta when [loadedCacheKey] matches,
+     * falling back to full bundle injection only if the active mode or SFP+ interface changed.
      */
+    private fun pushSampleUpdateToWebView(sample: TelemetrySample, mode: String) {
+        val targetCacheKey = TelemetryRepository.resolveCacheKey(this, mode)
+        if (!isPageLoaded || loadedCacheKey != targetCacheKey) {
+            injectTelemetryIntoWebView()
+            return
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val deltaJson = TelemetryRepository.toIncrementalDeltaJson(this@MainActivity, sample, mode)
+            withContext(Dispatchers.Main) {
+                postJsonMessageToWebView(deltaJson, "window.appendTelemetrySample($deltaJson);")
+            }
+        }
+    }
+
     private fun triggerDataRefresh(isSilent: Boolean) {
         val mode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
 
@@ -615,7 +591,7 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch(Dispatchers.IO) {
                     val host = prefs.getString(SshCollector.KEY_GATEWAY_HOST, SshCollector.DEFAULT_HOST) ?: SshCollector.DEFAULT_HOST
                     val sfpIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE) ?: SshCollector.DEFAULT_SFP_INTERFACE
-                    val result = SshCollector.collectViaSsh(this@MainActivity)
+                    val result = SshCollector.collectViaSsh(this@MainActivity, usePool = true)
                     if (result.isSuccess) {
                         val sample = result.getOrThrow()
                         TelemetryRepository.addSample(this@MainActivity, sample, SshCollector.MODE_SSH)
@@ -627,17 +603,16 @@ class MainActivity : AppCompatActivity() {
 
                         if (result.isSuccess) {
                             val sample = result.getOrThrow()
-                            injectTelemetryIntoWebView()
+                            pushSampleUpdateToWebView(sample, SshCollector.MODE_SSH)
                             NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
 
                             binding.btnErrorLog.visibility = View.GONE
-                            setStatusBadgeContent("Direct SSH ($sfpIface)", R.drawable.ic_mode_ssh, getActiveThemeColors().brandBlue)
+                            setStatusBadgeContent("SSH ($sfpIface)", R.drawable.ic_mode_ssh, getActiveThemeColors().brandBlue)
                         } else {
                             val err = result.exceptionOrNull()
                             val msg = err?.message ?: "Unknown SSH Error"
                             ErrorLogManager.logError("SSH Direct Probe ($host • $sfpIface)", err ?: Exception(msg))
 
-                            // Refresh WebView so port changes with no transceiver reflect cleanly
                             injectTelemetryIntoWebView()
 
                             binding.btnErrorLog.visibility = View.VISIBLE
@@ -658,86 +633,41 @@ class MainActivity : AppCompatActivity() {
 
             SshCollector.MODE_MAC_SERVER, SshCollector.MODE_WIN_SERVER, SshCollector.MODE_LINUX_SERVER, SshCollector.MODE_SERVER -> {
                 val serverName = when (mode) {
-                    SshCollector.MODE_MAC_SERVER -> "macOS Server"
-                    SshCollector.MODE_WIN_SERVER -> "Windows Server"
-                    SshCollector.MODE_LINUX_SERVER -> "Linux Server"
+                    SshCollector.MODE_MAC_SERVER -> "macOS"
+                    SshCollector.MODE_WIN_SERVER -> "Windows"
+                    SshCollector.MODE_LINUX_SERVER -> "Linux"
                     else -> "Server"
                 }
-                val prefKey = when (mode) {
-                    SshCollector.MODE_WIN_SERVER -> SshCollector.KEY_WIN_SERVER_URL
-                    SshCollector.MODE_LINUX_SERVER -> SshCollector.KEY_LINUX_SERVER_URL
-                    SshCollector.MODE_MAC_SERVER -> SshCollector.KEY_MAC_SERVER_URL
-                    else -> SshCollector.KEY_SERVER_URL
-                }
-                val defaultUrl = when (mode) {
-                    SshCollector.MODE_WIN_SERVER -> SshCollector.DEFAULT_WIN_SERVER_URL
-                    SshCollector.MODE_LINUX_SERVER -> SshCollector.DEFAULT_LINUX_SERVER_URL
-                    SshCollector.MODE_MAC_SERVER -> SshCollector.DEFAULT_MAC_SERVER_URL
-                    else -> SshCollector.DEFAULT_SERVER_URL
-                }
-
-                val serverUrl = prefs.getString(prefKey, defaultUrl)?.trim() ?: defaultUrl
+                val serverUrl = CollectorHttpClient.resolveServerUrlForMode(this, mode)
 
                 lifecycleScope.launch(Dispatchers.IO) {
-                    var conn: HttpURLConnection? = null
-                    try {
-                        val base = serverUrl.trimEnd('/')
-                        val endpoint = if (base.endsWith("/api/telemetry")) base else "$base/api/telemetry"
-                        val url = URL(endpoint)
-                        conn = (url.openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 4000
-                            readTimeout = 4000
+                    val fetchRes = CollectorHttpClient.fetchTelemetrySample(this@MainActivity, serverUrl)
+                    if (fetchRes.isSuccess) {
+                        val (validatedBase, sample) = fetchRes.getOrThrow()
+                        TelemetryRepository.addSample(this@MainActivity, sample, mode)
+                        withContext(Dispatchers.Main) {
+                            binding.progressBar.visibility = View.GONE
+                            binding.swipeRefresh.isRefreshing = false
+                            pushSampleUpdateToWebView(sample, mode)
+                            NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
+
+                            binding.btnErrorLog.visibility = View.GONE
+                            setStatusBadgeContent(serverName, R.drawable.ic_mode_server, getActiveThemeColors().brandBlue)
                         }
 
-                        if (conn.responseCode == 200) {
-                            val json = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                            val sample = Gson().fromJson(json, TelemetrySample::class.java)
-
-                            if (sample != null) {
-                                TelemetryRepository.addSample(this@MainActivity, sample, mode)
+                        if (!hasPromptedPingMismatch) {
+                            val serverPing = CollectorHttpClient.fetchServerPingConfig(this@MainActivity, validatedBase)
+                            val appPing = prefs.getString(SshCollector.KEY_PING_TARGET, SshCollector.DEFAULT_PING_TARGET) ?: SshCollector.DEFAULT_PING_TARGET
+                            if (!serverPing.isNullOrEmpty() && serverPing != appPing) {
                                 withContext(Dispatchers.Main) {
-                                    binding.progressBar.visibility = View.GONE
-                                    binding.swipeRefresh.isRefreshing = false
-                                    injectTelemetryIntoWebView()
-                                    NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
-
-                                    binding.btnErrorLog.visibility = View.GONE
-                                    setStatusBadgeContent(serverName, R.drawable.ic_mode_server, getActiveThemeColors().brandBlue)
-                                }
-
-                                // Check ping target parity with server
-                                if (!hasPromptedPingMismatch) {
-                                    var configConn: HttpURLConnection? = null
-                                    try {
-                                        val configUrl = URL("$base/api/config")
-                                        configConn = (configUrl.openConnection() as HttpURLConnection).apply {
-                                            connectTimeout = 2000
-                                            readTimeout = 2000
-                                        }
-                                        if (configConn.responseCode == 200) {
-                                            val configJson = configConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                                            val serverObj = org.json.JSONObject(configJson)
-                                            val serverPing = serverObj.optString("ping_target", "")
-                                            val appPing = prefs.getString(SshCollector.KEY_PING_TARGET, SshCollector.DEFAULT_PING_TARGET) ?: SshCollector.DEFAULT_PING_TARGET
-
-                                            if (serverPing.isNotEmpty() && serverPing != appPing) {
-                                                withContext(Dispatchers.Main) {
-                                                    hasPromptedPingMismatch = true
-                                                    showPingTargetMismatchDialog(base, serverName, serverPing, appPing)
-                                                }
-                                            }
-                                        }
-                                    } catch (_: Exception) {
-                                    } finally {
-                                        configConn?.disconnect()
-                                    }
+                                    hasPromptedPingMismatch = true
+                                    showPingTargetMismatchDialog(validatedBase, serverName, serverPing, appPing)
                                 }
                             }
-                        } else {
-                            throw Exception("HTTP ${conn.responseCode}: ${conn.responseMessage}")
                         }
-                    } catch (e: Exception) {
-                        ErrorLogManager.logError("$serverName Probe ($serverUrl)", e)
+                    } else {
+                        val err = fetchRes.exceptionOrNull() ?: Exception("Unknown server error")
+                        ErrorLogManager.logError("$serverName Probe ($serverUrl)", err)
                         withContext(Dispatchers.Main) {
                             binding.progressBar.visibility = View.GONE
                             binding.swipeRefresh.isRefreshing = false
@@ -748,14 +678,11 @@ class MainActivity : AppCompatActivity() {
                                 showErrorDetailsDialog()
                             }
                         }
-                    } finally {
-                        conn?.disconnect()
                     }
                 }
             }
 
             else -> {
-                // Offline mode: zero network calls, read entirely from local cache
                 injectTelemetryIntoWebView()
                 binding.btnErrorLog.visibility = View.GONE
                 setStatusBadgeContent("Offline", R.drawable.ic_mode_offline, getActiveThemeColors().textSecondary)
@@ -765,9 +692,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Prompts the user when a ping target discrepancy is detected between the host server and mobile app.
-     */
     private fun showPingTargetMismatchDialog(serverBase: String, serverName: String, serverPing: String, appPing: String) {
         if (isFinishing || isDestroyed) return
 
@@ -775,48 +699,32 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Ping Target Discrepancy")
             .setMessage(
                 "Host Collector ($serverName) is currently pinging:\n• $serverPing\n\n" +
-                "HotBoi on this device is configured for:\n• $appPing\n\n" +
-                "Would you like to push the app's ping configuration to the host server, or inherit the server's ping target?"
+                    "HotBoi on this device is configured for:\n• $appPing\n\n" +
+                    "Would you like to push the app's ping configuration to the host server, or inherit the server's ping target?"
             )
             .setPositiveButton("Push to Server ($appPing)") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
-                    var conn: HttpURLConnection? = null
-                    try {
-                        val url = URL("$serverBase/api/config")
-                        conn = (url.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "POST"
-                            doOutput = true
-                            connectTimeout = 4000
-                            readTimeout = 4000
-                            setRequestProperty("Content-Type", "application/json")
-                        }
-                        val json = org.json.JSONObject().apply {
-                            put("ping_target", appPing)
-                        }.toString()
-                        conn.outputStream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-                        val code = conn.responseCode
-                        withContext(Dispatchers.Main) {
+                    val pushRes = CollectorHttpClient.pushServerPingConfig(this@MainActivity, serverBase, appPing)
+                    withContext(Dispatchers.Main) {
+                        if (pushRes.isSuccess) {
+                            val code = pushRes.getOrThrow()
                             if (code in 200..299) {
                                 Toast.makeText(this@MainActivity, "Successfully pushed $appPing to $serverName", Toast.LENGTH_LONG).show()
                                 triggerDataRefresh(isSilent = true)
                             } else {
                                 Toast.makeText(this@MainActivity, "Server returned HTTP $code", Toast.LENGTH_SHORT).show()
                             }
+                        } else {
+                            Toast.makeText(this@MainActivity, "Push failed: ${pushRes.exceptionOrNull()?.localizedMessage}", Toast.LENGTH_SHORT).show()
                         }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "Push failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                        }
-                    } finally {
-                        conn?.disconnect()
                     }
                 }
             }
             .setNegativeButton("Inherit from Server ($serverPing)") { _, _ ->
-                prefs.edit()
-                    .putString(SshCollector.KEY_PING_TARGET, serverPing)
-                    .putString(SshCollector.KEY_PING_TARGET_LABEL, serverPing)
-                    .apply()
+                prefs.edit {
+                    putString(SshCollector.KEY_PING_TARGET, serverPing)
+                    putString(SshCollector.KEY_PING_TARGET_LABEL, serverPing)
+                }
                 injectTelemetryIntoWebView()
                 Toast.makeText(this@MainActivity, "Inherited $serverPing from $serverName", Toast.LENGTH_LONG).show()
             }
@@ -824,11 +732,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /**
-     * Displays the full-screen "About HotBoi" page matching Keyboardy RC2's layout,
-     * typography, What's New card, 2x2 Links & Resources, Contact card, Legal disclaimer,
-     * and RC2 app icon header.
-     */
     private fun showAboutHotBoiDialog() {
         val density = resources.displayMetrics.density
         val strokePx = (1f * density).toInt().coerceAtLeast(1)
@@ -851,7 +754,6 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        // Title Row (Matches Keyboardy RC2: Info Icon + "About HotBoi" + borderless X close button)
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -877,15 +779,10 @@ class MainActivity : AppCompatActivity() {
             setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
             typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         titleRow.addView(titleText)
 
-        // Top-Right Close Button (X)
         val topCloseBtn = ImageView(this).apply {
             setImageResource(R.drawable.ic_close)
             setColorFilter(tc.textSecondary)
@@ -904,26 +801,17 @@ class MainActivity : AppCompatActivity() {
         titleRow.addView(topCloseBtn)
         container.addView(titleRow)
 
-        // Scrollable Content Area (Fills full screen between header and bottom Close row)
         val scrollView = ScrollView(this).apply {
             isVerticalScrollBarEnabled = true
             isFillViewport = true
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
 
         val scrollContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
-        // Compact RC2 App Icon Identity Row (Ensures the RC2 icon is displayed on the About page)
         val identityCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -934,10 +822,7 @@ class MainActivity : AppCompatActivity() {
                 strokeWidthPx = strokePx,
                 strokeColor = tc.cardBorder
             )
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dpToPx(10)
             }
         }
@@ -976,10 +861,7 @@ class MainActivity : AppCompatActivity() {
                 strokeWidthPx = strokePx,
                 strokeColor = tc.amber
             )
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 marginStart = dpToPx(7)
             }
         })
@@ -992,44 +874,33 @@ class MainActivity : AppCompatActivity() {
         identityCard.addView(identityTextCol)
         scrollContent.addView(identityCard)
 
-        // 1. About Section
-        val aboutSectionLabel = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "About"
             setTextColor(tc.cyan)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
-        }
-        scrollContent.addView(aboutSectionLabel)
+        })
 
-        val bodyText = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "HotBoi is a standalone on-device thermal and optical telemetry monitor for network gateways, switches, and SFP+ / SFP28 optical transceivers.\n\n" +
-                    "Designed for network engineers and homelab operators, HotBoi connects directly from your Android device over SSH (Ed25519 / RSA / password) or optional host collector servers to stream live laser optics thermals, dual-core CPU temperatures, optical Rx/Tx signal power (dBm), laser bias current (mA), and ICMP round-trip ping latency with automated threshold alerts."
+                "Designed for network engineers and homelab operators, HotBoi connects directly from your Android device over pooled SSH (Ed25519 / RSA / password) or authenticated host collector servers to stream live laser optics thermals, dual-core CPU temperatures, optical Rx/Tx signal power (dBm), laser bias current (mA), and ICMP round-trip ping latency with automated threshold alerts."
             setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setLineSpacing(dpToPx(3).toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(6)
             }
-        }
-        scrollContent.addView(bodyText)
+        })
 
-        // 2. Release Candidate 3 & What's New Section
-        val whatsNewLabel = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "Release Candidate 3 & What's New"
             setTextColor(tc.cyan)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(14)
             }
-        }
-        scrollContent.addView(whatsNewLabel)
+        })
 
         val whatsNewBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1042,43 +913,33 @@ class MainActivity : AppCompatActivity() {
                 strokeWidthPx = strokePx,
                 strokeColor = tc.cardBorder
             )
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(6)
             }
         }
 
-        val whatsNewText = TextView(this).apply {
-            text = "• Release Candidate 3: Unified Medusko Cobalt Blue, Warm Gold, Dark Obsidian & Warm Linen palette matching Keyboardy & Lagatron\n" +
-                    "• Live SSH SFP+ / SFP28 port discovery & per-port history isolation\n" +
-                    "• Full-screen Settings & About dialogs with edge-to-edge system bar support\n" +
-                    "• Custom Medusko vector iconography across UI & thermal push notifications\n" +
-                    "• Instant zero-flash Light / Dark theme switching directly in top bar\n" +
-                    "• Hardware-agnostic gateway & optical transceiver configuration"
+        whatsNewBox.addView(TextView(this).apply {
+            text = "• Unified Medusko Cobalt Blue, Warm Gold, Dark Obsidian & Warm Linen palette matching Keyboardy & Lagatron\n" +
+                "• Pooled SSH session engine + pure POSIX shell probe (~150 ms polls, zero python3 gateway requirement)\n" +
+                "• Hardened TOFU SSH host-key pinning, fail-closed AES-256-GCM Keystore encryption & WAN HTTPS enforcement\n" +
+                "• Append-only JSONL storage + WebViewAssetLoader & WebMessageCompat O(1) incremental chart updates\n" +
+                "• R8 full-mode optimization & stripped PQC tables reducing release APK footprint by ~35%"
             setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             setLineSpacing(dpToPx(3).toFloat(), 1f)
-        }
-        whatsNewBox.addView(whatsNewText)
+        })
         scrollContent.addView(whatsNewBox)
 
-        // 3. Links & Resources Section (Matches Keyboardy RC2 2x2 Grid + Contact Card)
-        val linksLabel = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "Links & Resources"
             setTextColor(tc.cyan)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(14)
                 bottomMargin = dpToPx(6)
             }
-        }
-        scrollContent.addView(linksLabel)
+        })
 
         fun createLinkButton(label: String, url: String): TextView {
             return TextView(this).apply {
@@ -1087,20 +948,14 @@ class MainActivity : AppCompatActivity() {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                val padH = dpToPx(8)
-                val padV = dpToPx(7)
-                setPadding(padH, padV, padH, padV)
+                setPadding(dpToPx(8), dpToPx(7), dpToPx(8), dpToPx(7))
                 background = createRoundedDrawable(
                     fillColor = tc.bgDark,
                     cornerRadiusPx = 8f * density,
                     strokeWidthPx = strokePx,
                     strokeColor = tc.cardBorder
                 )
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = dpToPx(2)
                     marginEnd = dpToPx(2)
                 }
@@ -1117,10 +972,7 @@ class MainActivity : AppCompatActivity() {
 
         val linksRow1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         linksRow1.addView(createLinkButton("Changelog ↗", "https://github.com/medusko/HotBoi/blob/main/CHANGELOG.md"))
         linksRow1.addView(createLinkButton("Releases ↗", "https://github.com/medusko/HotBoi/releases"))
@@ -1128,10 +980,7 @@ class MainActivity : AppCompatActivity() {
 
         val linksRow2 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(6)
             }
         }
@@ -1139,22 +988,16 @@ class MainActivity : AppCompatActivity() {
         linksRow2.addView(createLinkButton("Sponsor ↗", "https://github.com/sponsors/Zlatty"))
         scrollContent.addView(linksRow2)
 
-        // Contact & Social Information Card
         val contactBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val boxPadH = dpToPx(12)
-            val boxPadV = dpToPx(10)
-            setPadding(boxPadH, boxPadV, boxPadH, boxPadV)
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
             background = createRoundedDrawable(
                 fillColor = tc.bgDark,
                 cornerRadiusPx = 10f * density,
                 strokeWidthPx = strokePx,
                 strokeColor = tc.cardBorder
             )
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(8)
             }
         }
@@ -1163,10 +1006,7 @@ class MainActivity : AppCompatActivity() {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = dpToPx(2)
                     bottomMargin = dpToPx(2)
                 }
@@ -1175,10 +1015,7 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(tc.textSecondary)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                     typeface = Typeface.DEFAULT_BOLD
-                    layoutParams = LinearLayout.LayoutParams(
-                        dpToPx(72),
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(72), ViewGroup.LayoutParams.WRAP_CONTENT)
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = value
@@ -1200,37 +1037,27 @@ class MainActivity : AppCompatActivity() {
         contactBox.addView(createContactRow("Social:", "@meduskodev on Twitter", "https://twitter.com/meduskodev"))
         scrollContent.addView(contactBox)
 
-        // 4. Trademark & Legal Disclaimer (Matches Keyboardy RC2)
-        val legalText = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "Android is a trademark of Google LLC. All other trademarks, service marks, trade names, and product names referenced herein are the property of their respective owners. HotBoi is an independent product developed by Medusko and is not affiliated with, endorsed by, or sponsored by Google LLC or any other referenced hardware vendor. Use of third-party names or marks is for identification and compatibility purposes only and does not imply any association with or endorsement by the trademark holders."
             setTextColor(tc.textSecondary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setLineSpacing(dpToPx(2).toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(12)
             }
-        }
-        scrollContent.addView(legalText)
+        })
 
-        // 5. Version Footer (Matches Keyboardy & Lagatron RC3)
-        val versionFooter = TextView(this).apply {
+        scrollContent.addView(TextView(this).apply {
             text = "HotBoi v$vName (Build $vCode) • Release Candidate 3 • Built for Android 15 / Pixel\nDesigned & Engineered by Medusko"
             setTextColor(tc.textSecondary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dpToPx(14)
                 bottomMargin = dpToPx(4)
             }
-        }
-        scrollContent.addView(versionFooter)
+        })
 
         scrollView.addView(scrollContent)
         container.addView(scrollView)
@@ -1242,9 +1069,6 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setLayout(width, maxHeight)
     }
 
-    /**
-     * Displays system diagnostic modal with copyable stack trace, active system reflection, and modern Android design.
-     */
     private fun showErrorDetailsDialog() {
         val tc = getActiveThemeColors()
         val density = resources.displayMetrics.density
@@ -1330,6 +1154,7 @@ class MainActivity : AppCompatActivity() {
         btnClear.setOnClickListener {
             ErrorLogManager.clearErrors()
             binding.btnErrorLog.visibility = View.GONE
+            updateStatusBadgeForMode()
             dialog.dismiss()
             Toast.makeText(this, "Error history cleared", Toast.LENGTH_SHORT).show()
         }
@@ -1352,9 +1177,29 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    /**
-     * Opens the full-screen Settings & Setup screen (replacing the previous popup dialog).
-     */
+    private fun persistCredentialsSafely(
+        host: String,
+        port: Int,
+        user: String,
+        pass: String,
+        key: String
+    ): Boolean {
+        val encPass = CryptoHelper.encryptOrNull(pass)
+        val encKey = CryptoHelper.encryptOrNull(key)
+        if (encPass == null || encKey == null) {
+            Toast.makeText(this, "Android Keystore unavailable: refused to store plaintext credentials", Toast.LENGTH_LONG).show()
+            return false
+        }
+        prefs.edit {
+            putString(SshCollector.KEY_GATEWAY_HOST, host)
+            putInt(SshCollector.KEY_GATEWAY_PORT, port)
+            putString(SshCollector.KEY_GATEWAY_USER, user)
+            putString(SshCollector.KEY_GATEWAY_PASSWORD, encPass)
+            putString(SshCollector.KEY_GATEWAY_SSH_KEY, encKey)
+        }
+        return true
+    }
+
     private fun showSettingsDialog(isFirstLaunch: Boolean) {
         val dialog = Dialog(this, R.style.Theme_HotBoi)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -1419,6 +1264,7 @@ class MainActivity : AppCompatActivity() {
         val tvServerTitle = dialogView.findViewById<TextView>(R.id.tvServerSectionTitle)
         val tvServerBetaNote = dialogView.findViewById<TextView>(R.id.tvServerBetaNote)
         val etServerUrl = dialogView.findViewById<EditText>(R.id.etServerUrl)
+        val etServerApiToken = dialogView.findViewById<EditText>(R.id.etServerApiToken)
 
         val etHost = dialogView.findViewById<EditText>(R.id.etHost)
         val etPort = dialogView.findViewById<EditText>(R.id.etPort)
@@ -1426,6 +1272,9 @@ class MainActivity : AppCompatActivity() {
         val etPassword = dialogView.findViewById<EditText>(R.id.etPassword)
         val etSshKey = dialogView.findViewById<EditText>(R.id.etSshKey)
         val btnLoadMacKey = dialogView.findViewById<Button>(R.id.btnLoadMacKey)
+        val cbPonStickAutoIp = dialogView.findViewById<CheckBox>(R.id.cbPonStickAutoIp)
+        val tvKnownHostsStatus = dialogView.findViewById<TextView>(R.id.tvKnownHostsStatus)
+        val btnResetKnownHosts = dialogView.findViewById<Button>(R.id.btnResetKnownHosts)
         val btnTest = dialogView.findViewById<Button>(R.id.btnTestConnection)
 
         val spPing = dialogView.findViewById<Spinner>(R.id.spPingTarget)
@@ -1448,7 +1297,6 @@ class MainActivity : AppCompatActivity() {
         val rbThemeLight = dialogView.findViewById<RadioButton>(R.id.rbThemeLight)
         val rbThemeDark = dialogView.findViewById<RadioButton>(R.id.rbThemeDark)
 
-        // 1. Hardware & Universal SFP+ Interface Selector (with live SSH port scanner)
         etDeviceName.setText(prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME))
 
         data class PortEntry(val iface: String, val displayLabel: String, val shortLabel: String, val isCustom: Boolean = false)
@@ -1490,7 +1338,31 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // Live SSH Gateway Port Scanner
+        fun refreshKnownHostsLabel() {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val summary = SshCollector.getKnownHostsSummary(this@MainActivity)
+                withContext(Dispatchers.Main) {
+                    tvKnownHostsStatus.text = summary
+                }
+            }
+        }
+        refreshKnownHostsLabel()
+
+        btnResetKnownHosts.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            AlertDialog.Builder(this)
+                .setTitle("Reset Pinned SSH Host Keys?")
+                .setMessage("Only clear pinned host keys if you replaced or reinstalled your gateway hardware. The next SSH connection will pin the new host key (TOFU).")
+                .setPositiveButton("Reset Keys") { _, _ ->
+                    if (SshCollector.clearKnownHosts(this)) {
+                        refreshKnownHostsLabel()
+                        Toast.makeText(this, "Cleared pinned SSH host keys", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
         btnScanPorts.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val host = etHost.text.toString().trim().ifEmpty { SshCollector.DEFAULT_HOST }
@@ -1499,13 +1371,7 @@ class MainActivity : AppCompatActivity() {
             val pass = etPassword.text.toString()
             val key = etSshKey.text.toString().trim()
 
-            prefs.edit()
-                .putString(SshCollector.KEY_GATEWAY_HOST, host)
-                .putInt(SshCollector.KEY_GATEWAY_PORT, port)
-                .putString(SshCollector.KEY_GATEWAY_USER, user)
-                .putString(SshCollector.KEY_GATEWAY_PASSWORD, CryptoHelper.encrypt(pass))
-                .putString(SshCollector.KEY_GATEWAY_SSH_KEY, CryptoHelper.encrypt(key))
-                .apply()
+            if (!persistCredentialsSafely(host, port, user, pass, key)) return@setOnClickListener
 
             btnScanPorts.isEnabled = false
             btnScanPorts.text = "Scanning..."
@@ -1515,6 +1381,7 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     btnScanPorts.isEnabled = true
                     btnScanPorts.text = "Scan Gateway Ports"
+                    refreshKnownHostsLabel()
                     if (res.isSuccess) {
                         val discovered = res.getOrThrow()
                         if (discovered.isNotEmpty()) {
@@ -1526,11 +1393,7 @@ class MainActivity : AppCompatActivity() {
                             portEntries.add(PortEntry("custom", "Custom Interface Name...", "Custom SFP+", isCustom = true))
                             val preferred = discovered.firstOrNull { it.hasOpticDom }?.iface ?: savedIface
                             refreshPortSpinner(preferred)
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Discovered ${discovered.size} interfaces on $host",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(this@MainActivity, "Discovered ${discovered.size} interfaces on $host", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(this@MainActivity, "Connected, but no eth/sfp interfaces found", Toast.LENGTH_SHORT).show()
                         }
@@ -1545,7 +1408,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 2. Data Collection Mode Switching
         val currentMode = prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH)
         var macUrlDraft = prefs.getString(SshCollector.KEY_MAC_SERVER_URL, SshCollector.DEFAULT_MAC_SERVER_URL) ?: SshCollector.DEFAULT_MAC_SERVER_URL
         var winUrlDraft = prefs.getString(SshCollector.KEY_WIN_SERVER_URL, SshCollector.DEFAULT_WIN_SERVER_URL) ?: SshCollector.DEFAULT_WIN_SERVER_URL
@@ -1577,7 +1439,7 @@ class MainActivity : AppCompatActivity() {
                 configureServerSection(
                     SshCollector.MODE_MAC_SERVER,
                     "MACOS BACKGROUND SERVER (BETA)",
-                    "HotBoi will fetch continuous telemetry from your Mac daemon at 192.168.0.134:8080.",
+                    "LAN HTTP (e.g. http://192.168.0.134:8080 with --bind 0.0.0.0) or remote HTTPS.",
                     macUrlDraft
                 )
             }
@@ -1586,7 +1448,7 @@ class MainActivity : AppCompatActivity() {
                 configureServerSection(
                     SshCollector.MODE_WIN_SERVER,
                     "WINDOWS BACKGROUND SERVER (BETA)",
-                    "HotBoi will fetch continuous telemetry from your Windows service at 192.168.0.171:8080.",
+                    "LAN HTTP (e.g. http://192.168.0.171:8080 with --bind 0.0.0.0) or remote HTTPS.",
                     winUrlDraft
                 )
             }
@@ -1595,7 +1457,7 @@ class MainActivity : AppCompatActivity() {
                 configureServerSection(
                     SshCollector.MODE_LINUX_SERVER,
                     "LINUX BACKGROUND SERVER (BETA)",
-                    "HotBoi will fetch continuous telemetry from your Debian / Ubuntu server daemon at 192.168.0.150:8080.",
+                    "LAN HTTP (e.g. http://192.168.0.150:8080 with --bind 0.0.0.0) or remote HTTPS.",
                     linuxUrlDraft
                 )
             }
@@ -1623,7 +1485,7 @@ class MainActivity : AppCompatActivity() {
                     configureServerSection(
                         SshCollector.MODE_MAC_SERVER,
                         "MACOS BACKGROUND SERVER (BETA)",
-                        "HotBoi will fetch continuous telemetry from your Mac daemon at 192.168.0.134:8080.",
+                        "LAN HTTP (e.g. http://192.168.0.134:8080 with --bind 0.0.0.0) or remote HTTPS.",
                         macUrlDraft
                     )
                 }
@@ -1631,7 +1493,7 @@ class MainActivity : AppCompatActivity() {
                     configureServerSection(
                         SshCollector.MODE_WIN_SERVER,
                         "WINDOWS BACKGROUND SERVER (BETA)",
-                        "HotBoi will fetch continuous telemetry from your Windows service at 192.168.0.171:8080.",
+                        "LAN HTTP (e.g. http://192.168.0.171:8080 with --bind 0.0.0.0) or remote HTTPS.",
                         winUrlDraft
                     )
                 }
@@ -1639,7 +1501,7 @@ class MainActivity : AppCompatActivity() {
                     configureServerSection(
                         SshCollector.MODE_LINUX_SERVER,
                         "LINUX BACKGROUND SERVER (BETA)",
-                        "HotBoi will fetch continuous telemetry from your Debian / Ubuntu server daemon at 192.168.0.150:8080.",
+                        "LAN HTTP (e.g. http://192.168.0.150:8080 with --bind 0.0.0.0) or remote HTTPS.",
                         linuxUrlDraft
                     )
                 }
@@ -1651,15 +1513,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 3. Ping Target Selector
-        val pingOptions = arrayOf(
-            "1.1.1.1 (Cloudflare)",
-            "8.8.8.8 (Google)",
-            "9.9.9.9 (Quad9)",
-            "Custom Target..."
-        )
-        val pingAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, pingOptions)
-        spPing.adapter = pingAdapter
+        val pingOptions = arrayOf("1.1.1.1 (Cloudflare)", "8.8.8.8 (Google)", "9.9.9.9 (Quad9)", "Custom Target...")
+        spPing.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, pingOptions)
 
         val savedPing = prefs.getString(SshCollector.KEY_PING_TARGET, SshCollector.DEFAULT_PING_TARGET) ?: SshCollector.DEFAULT_PING_TARGET
         when (savedPing) {
@@ -1680,28 +1535,25 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // 4. Background Scheduling
         val intervalOptions = arrayOf("Every 15 minutes", "Every 30 minutes", "Every 1 hour (Recommended)", "Every 2 hours")
-        val intervalAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, intervalOptions)
-        spInterval.adapter = intervalAdapter
+        spInterval.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, intervalOptions)
 
-        val savedInterval = prefs.getInt(SshCollector.KEY_BG_INTERVAL_MIN, 60)
-        when (savedInterval) {
+        when (prefs.getInt(SshCollector.KEY_BG_INTERVAL_MIN, 60)) {
             15 -> spInterval.setSelection(0)
             30 -> spInterval.setSelection(1)
             120 -> spInterval.setSelection(3)
             else -> spInterval.setSelection(2)
         }
 
-        // Prepopulate text fields
         etHost.setText(prefs.getString(SshCollector.KEY_GATEWAY_HOST, SshCollector.DEFAULT_HOST))
         etPort.setText(prefs.getInt(SshCollector.KEY_GATEWAY_PORT, SshCollector.DEFAULT_PORT).toString())
         etUser.setText(prefs.getString(SshCollector.KEY_GATEWAY_USER, SshCollector.DEFAULT_USER))
         etPassword.setText(CryptoHelper.decrypt(prefs.getString(SshCollector.KEY_GATEWAY_PASSWORD, "")))
         etSshKey.setText(CryptoHelper.decrypt(prefs.getString(SshCollector.KEY_GATEWAY_SSH_KEY, "")))
+        etServerApiToken.setText(CryptoHelper.decrypt(prefs.getString(SshCollector.KEY_SERVER_API_TOKEN, "")))
+        cbPonStickAutoIp.isChecked = prefs.getBoolean(SshCollector.KEY_PON_STICK_AUTO_IP, false)
         cbBg.isChecked = prefs.getBoolean(SshCollector.KEY_BG_ENABLED, false)
 
-        // 5. Units & Dynamic Real-Time Thermal Threshold Conversion
         val currentUnit = prefs.getString(SshCollector.KEY_TEMP_UNIT, SshCollector.UNIT_CELSIUS) ?: SshCollector.UNIT_CELSIUS
         val savedThresholdC = prefs.getFloat(SshCollector.KEY_ALERT_THRESHOLD, SshCollector.DEFAULT_ALERT_THRESHOLD.toFloat())
 
@@ -1761,15 +1613,12 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 6. Theme Prepopulation
-        val currentTheme = prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM) ?: SshCollector.THEME_SYSTEM
-        when (currentTheme) {
+        when (prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM)) {
             SshCollector.THEME_LIGHT -> rbThemeLight.isChecked = true
             SshCollector.THEME_DARK -> rbThemeDark.isChecked = true
             else -> rbThemeSystem.isChecked = true
         }
 
-        // Test Push Notification Button
         btnTestNotification.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             checkAndRequestNotificationPermission()
@@ -1790,21 +1639,19 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Push notification sent! Check your notification shade.", Toast.LENGTH_SHORT).show()
         }
 
-        // Circular Info button for notification architecture breakdown
         btnThresholdInfo.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Push Notifications Architecture")
                 .setMessage(
                     "Direct SSH Mode:\n" +
-                    "On-device thermal trip alerts trigger directly on this phone via background workers.\n\n" +
-                    "macOS, Windows, & Linux Server Modes:\n" +
-                    "Telemetry collection and critical alerts run 24/7 on your dedicated host service even when your phone is asleep, closed, or off-network."
+                        "On-device thermal trip alerts trigger directly on this phone via background workers.\n\n" +
+                        "macOS, Windows, & Linux Server Modes:\n" +
+                        "Telemetry collection and critical alerts run 24/7 on your dedicated host service even when your phone is asleep, closed, or off-network."
                 )
                 .setPositiveButton("Got It", null)
                 .show()
         }
 
-        // Load Authorized Key / Paste from Clipboard
         btnLoadMacKey.text = "Paste from Clipboard"
         btnLoadMacKey.setOnClickListener {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -1817,7 +1664,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Test Connection Button
         btnTest.setOnClickListener {
             val host = etHost.text.toString().trim().ifEmpty { SshCollector.DEFAULT_HOST }
             val port = etPort.text.toString().trim().toIntOrNull() ?: SshCollector.DEFAULT_PORT
@@ -1825,22 +1671,17 @@ class MainActivity : AppCompatActivity() {
             val pass = etPassword.text.toString()
             val key = etSshKey.text.toString().trim()
 
+            if (!persistCredentialsSafely(host, port, user, pass, key)) return@setOnClickListener
+
             btnTest.isEnabled = false
             btnTest.text = "Testing..."
-
-            prefs.edit()
-                .putString(SshCollector.KEY_GATEWAY_HOST, host)
-                .putInt(SshCollector.KEY_GATEWAY_PORT, port)
-                .putString(SshCollector.KEY_GATEWAY_USER, user)
-                .putString(SshCollector.KEY_GATEWAY_PASSWORD, CryptoHelper.encrypt(pass))
-                .putString(SshCollector.KEY_GATEWAY_SSH_KEY, CryptoHelper.encrypt(key))
-                .apply()
 
             lifecycleScope.launch(Dispatchers.IO) {
                 val res = SshCollector.testConnection(this@MainActivity)
                 withContext(Dispatchers.Main) {
                     btnTest.isEnabled = true
                     btnTest.text = "Test Connection"
+                    refreshKnownHostsLabel()
                     if (res.isSuccess) {
                         Toast.makeText(this@MainActivity, res.getOrThrow(), Toast.LENGTH_LONG).show()
                     } else {
@@ -1873,7 +1714,31 @@ class MainActivity : AppCompatActivity() {
             val user = etUser.text.toString().trim().ifEmpty { SshCollector.DEFAULT_USER }
             val pass = etPassword.text.toString()
             val key = etSshKey.text.toString().trim()
+            val serverToken = etServerApiToken.text.toString().trim()
             captureCurrentServerDraft()
+
+            // Validate collector server URL security policy immediately when saving a Server mode
+            if (chosenMode == SshCollector.MODE_MAC_SERVER || chosenMode == SshCollector.MODE_WIN_SERVER || chosenMode == SshCollector.MODE_LINUX_SERVER) {
+                val activeUrl = when (chosenMode) {
+                    SshCollector.MODE_WIN_SERVER -> winUrlDraft
+                    SshCollector.MODE_LINUX_SERVER -> linuxUrlDraft
+                    else -> macUrlDraft
+                }
+                try {
+                    CollectorHttpClient.validateCollectorBaseUrl(activeUrl)
+                } catch (se: SecurityException) {
+                    Toast.makeText(this, se.message, Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+
+            val encPass = CryptoHelper.encryptOrNull(pass)
+            val encKey = CryptoHelper.encryptOrNull(key)
+            val encToken = CryptoHelper.encryptOrNull(serverToken)
+            if (encPass == null || encKey == null || encToken == null) {
+                Toast.makeText(this, "Android Keystore error: refused to store unencrypted credentials", Toast.LENGTH_LONG).show()
+                return
+            }
 
             val enteredThreshold = etThreshold.text.toString().trim().toFloatOrNull() ?: SshCollector.DEFAULT_ALERT_THRESHOLD.toFloat()
             val thresholdC = if (rbUnitFahrenheit.isChecked) {
@@ -1908,37 +1773,42 @@ class MainActivity : AppCompatActivity() {
 
             val oldTheme = prefs.getString(SshCollector.KEY_THEME_MODE, SshCollector.THEME_SYSTEM)
 
-            prefs.edit()
-                .putString(SshCollector.KEY_DEVICE_NAME, devName)
-                .putString(SshCollector.KEY_SFP_INTERFACE, chosenIface)
-                .putString(SshCollector.KEY_SFP_PORT_LABEL, ifaceLabel)
-                .putString(SshCollector.KEY_COLLECTION_MODE, chosenMode)
-                .putString(SshCollector.KEY_GATEWAY_HOST, host)
-                .putInt(SshCollector.KEY_GATEWAY_PORT, port)
-                .putString(SshCollector.KEY_GATEWAY_USER, user)
-                .putString(SshCollector.KEY_GATEWAY_PASSWORD, CryptoHelper.encrypt(pass))
-                .putString(SshCollector.KEY_GATEWAY_SSH_KEY, CryptoHelper.encrypt(key))
-                .putString(SshCollector.KEY_MAC_SERVER_URL, macUrlDraft)
-                .putString(SshCollector.KEY_WIN_SERVER_URL, winUrlDraft)
-                .putString(SshCollector.KEY_LINUX_SERVER_URL, linuxUrlDraft)
-                .apply {
-                    when (chosenMode) {
-                        SshCollector.MODE_WIN_SERVER -> putString(SshCollector.KEY_SERVER_URL, winUrlDraft)
-                        SshCollector.MODE_LINUX_SERVER -> putString(SshCollector.KEY_SERVER_URL, linuxUrlDraft)
-                        SshCollector.MODE_MAC_SERVER -> putString(SshCollector.KEY_SERVER_URL, macUrlDraft)
-                    }
+            prefs.edit {
+                putString(SshCollector.KEY_DEVICE_NAME, devName)
+                putString(SshCollector.KEY_SFP_INTERFACE, chosenIface)
+                putString(SshCollector.KEY_SFP_PORT_LABEL, ifaceLabel)
+                putString(SshCollector.KEY_COLLECTION_MODE, chosenMode)
+                putString(SshCollector.KEY_GATEWAY_HOST, host)
+                putInt(SshCollector.KEY_GATEWAY_PORT, port)
+                putString(SshCollector.KEY_GATEWAY_USER, user)
+                putString(SshCollector.KEY_GATEWAY_PASSWORD, encPass)
+                putString(SshCollector.KEY_GATEWAY_SSH_KEY, encKey)
+                putBoolean(SshCollector.KEY_PON_STICK_AUTO_IP, cbPonStickAutoIp.isChecked)
+                putString(SshCollector.KEY_MAC_SERVER_URL, macUrlDraft)
+                putString(SshCollector.KEY_WIN_SERVER_URL, winUrlDraft)
+                putString(SshCollector.KEY_LINUX_SERVER_URL, linuxUrlDraft)
+                putString(SshCollector.KEY_SERVER_API_TOKEN, encToken)
+                when (chosenMode) {
+                    SshCollector.MODE_WIN_SERVER -> putString(SshCollector.KEY_SERVER_URL, winUrlDraft)
+                    SshCollector.MODE_LINUX_SERVER -> putString(SshCollector.KEY_SERVER_URL, linuxUrlDraft)
+                    SshCollector.MODE_MAC_SERVER -> putString(SshCollector.KEY_SERVER_URL, macUrlDraft)
                 }
-                .putString(SshCollector.KEY_PING_TARGET, chosenTarget)
-                .putString(SshCollector.KEY_PING_TARGET_LABEL, targetLabel)
-                .putBoolean(SshCollector.KEY_BG_ENABLED, cbBg.isChecked)
-                .putInt(SshCollector.KEY_BG_INTERVAL_MIN, intervalMin)
-                .putFloat(SshCollector.KEY_ALERT_THRESHOLD, thresholdC)
-                .putString(SshCollector.KEY_TEMP_UNIT, chosenUnit)
-                .putString(SshCollector.KEY_THEME_MODE, chosenTheme)
-                .apply()
+                putString(SshCollector.KEY_PING_TARGET, chosenTarget)
+                putString(SshCollector.KEY_PING_TARGET_LABEL, targetLabel)
+                putBoolean(SshCollector.KEY_BG_ENABLED, cbBg.isChecked)
+                putInt(SshCollector.KEY_BG_INTERVAL_MIN, intervalMin)
+                putFloat(SshCollector.KEY_ALERT_THRESHOLD, thresholdC)
+                putString(SshCollector.KEY_TEMP_UNIT, chosenUnit)
+                putString(SshCollector.KEY_THEME_MODE, chosenTheme)
+            }
+
+            if (chosenMode != SshCollector.MODE_SSH) {
+                SshCollector.closePooledSession()
+            }
 
             isShowingFirstLaunchDialog = false
             hasPerformedInitialRefresh = true
+            loadedCacheKey = null
             updateUnitButtonLabel()
             updateStatusBadgeForMode()
             HotBoiApp.rescheduleBackgroundWork(this)
@@ -1983,8 +1853,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val banner = com.google.android.gms.ads.AdView(this).apply {
                 setAdSize(com.google.android.gms.ads.AdSize.BANNER)
-                // Google's official Test Ad Unit ID for banners
-                adUnitId = "ca-app-pub-3940256099942544/6300978111"
+                adUnitId = BuildConfig.ADMOB_BANNER_UNIT_ID
             }
             adView = banner
             binding.adContainer.removeAllViews()
@@ -2000,6 +1869,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         adView?.resume()
+        binding.webView.onResume()
+        binding.webView.resumeTimers()
         updateUnitButtonLabel()
         applyNativeThemeColors()
         refreshHandler.postDelayed(autoRefreshRunnable, AUTO_REFRESH_INTERVAL_MS)
@@ -2007,12 +1878,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        adView?.pause()
         refreshHandler.removeCallbacks(autoRefreshRunnable)
+        binding.webView.onPause()
+        binding.webView.pauseTimers()
+        adView?.pause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        SshCollector.closePooledSession()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            (binding.webView.parent as? ViewGroup)?.removeView(binding.webView)
+            binding.webView.stopLoading()
+            binding.webView.destroy()
+        } catch (e: Exception) {
+            Log.e("HotBoi", "Failed to destroy WebView", e)
+        }
         try {
             adView?.destroy()
             adView = null

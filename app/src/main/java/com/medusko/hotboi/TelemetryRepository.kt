@@ -1,29 +1,35 @@
 package com.medusko.hotboi
 
 import android.content.Context
-import com.google.gson.Gson
+import android.content.res.Configuration
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 
 /**
- * High-performance persistence repository providing source- and interface-isolated telemetry caching.
- * Each collection mode and SFP+ port interface maintains its own dedicated historical store,
- * preventing sample cross-contamination or stale seeded data in live modes.
+ * Append-only JSONL persistence repository providing source- and interface-isolated telemetry caching.
+ * - Appends new samples in O(1) via single-line JSONL writes instead of rewriting 2,500-sample arrays.
+ * - Automatically migrates legacy `.json` array caches on first load without data loss.
+ * - Compacts JSONL files atomically only when line count exceeds [COMPACT_THRESHOLD].
+ * - Provides both full initial bundle JSON and ~300-byte incremental delta JSON for WebView updates.
  */
 object TelemetryRepository {
 
-    private const val MAX_SAMPLES = 2500
-    private val gson = Gson()
-    private val modeCaches = mutableMapOf<String, MutableList<TelemetrySample>>()
+    const val MAX_SAMPLES = 2500
+    private const val COMPACT_THRESHOLD = 3000
 
-    private fun resolveMode(context: Context, mode: String?): String {
+    private val gson get() = CollectorHttpClient.gson
+    private val modeCaches = mutableMapOf<String, MutableList<TelemetrySample>>()
+    private val fileLineCounts = mutableMapOf<String, Int>()
+
+    fun resolveMode(context: Context, mode: String?): String {
         if (!mode.isNullOrBlank()) return mode
         val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(SshCollector.KEY_COLLECTION_MODE, SshCollector.MODE_SSH) ?: SshCollector.MODE_SSH
     }
 
-    private fun resolveCacheKey(context: Context, mode: String): String {
+    fun resolveCacheKey(context: Context, mode: String): String {
         if (mode == SshCollector.MODE_SSH) {
             val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
             val rawIface = prefs.getString(SshCollector.KEY_SFP_INTERFACE, SshCollector.DEFAULT_SFP_INTERFACE)
@@ -34,7 +40,11 @@ object TelemetryRepository {
         return mode
     }
 
-    private fun getFileName(cacheKey: String): String {
+    private fun getJsonlFileName(cacheKey: String): String {
+        return getLegacyJsonFileName(cacheKey).removeSuffix(".json") + ".jsonl"
+    }
+
+    private fun getLegacyJsonFileName(cacheKey: String): String {
         return when {
             cacheKey == SshCollector.MODE_MAC_SERVER -> "macos_server_history.json"
             cacheKey == SshCollector.MODE_WIN_SERVER -> "windows_server_history.json"
@@ -49,9 +59,6 @@ object TelemetryRepository {
         }
     }
 
-    /**
-     * Filters out legacy bundled October 2026 CSV samples that were previously seeded into live SSH history.
-     */
     private fun isBundledSeedSample(sample: TelemetrySample): Boolean {
         return sample.timestamp.startsWith("2026-10-22") ||
             sample.timestamp.startsWith("2026-10-23") ||
@@ -66,53 +73,77 @@ object TelemetryRepository {
         val cacheKey = resolveCacheKey(context, mode)
         if (modeCaches.containsKey(cacheKey)) return
 
-        val fileName = getFileName(cacheKey)
-        val file = File(context.filesDir, fileName)
+        val jsonlFile = File(context.filesDir, getJsonlFileName(cacheKey))
+        val legacyJsonFile = File(context.filesDir, getLegacyJsonFileName(cacheKey))
         val loadedList = mutableListOf<TelemetrySample>()
-        var purgedSeedData = false
+        var needsFullCompact = false
+        var lineCount = 0
 
-        if (file.exists()) {
+        if (jsonlFile.exists()) {
             try {
-                val json = file.readText()
+                jsonlFile.useLines(Charsets.UTF_8) { lines ->
+                    for (line in lines) {
+                        val trimmed = line.trim()
+                        if (trimmed.isEmpty()) continue
+                        lineCount++
+                        try {
+                            val sample = gson.fromJson(trimmed, TelemetrySample::class.java)
+                            if (sample != null && (mode == SshCollector.MODE_OFFLINE || !isBundledSeedSample(sample))) {
+                                loadedList.add(sample)
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                if (loadedList.size > MAX_SAMPLES) {
+                    val trim = loadedList.size - MAX_SAMPLES
+                    loadedList.subList(0, trim).clear()
+                    needsFullCompact = true
+                }
+            } catch (_: Exception) {
+            }
+        } else if (legacyJsonFile.exists()) {
+            // One-time migration from legacy JSON array to append-only JSONL
+            try {
+                val json = legacyJsonFile.readText(Charsets.UTF_8)
                 val type = object : TypeToken<List<TelemetrySample>>() {}.type
                 val list: List<TelemetrySample> = gson.fromJson(json, type) ?: emptyList()
-                if (mode == SshCollector.MODE_OFFLINE) {
-                    loadedList.addAll(list)
-                } else {
-                    val filtered = list.filterNot { isBundledSeedSample(it) }
-                    if (filtered.size != list.size) {
-                        purgedSeedData = true
-                    }
-                    loadedList.addAll(filtered)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+                val filtered = if (mode == SshCollector.MODE_OFFLINE) list else list.filterNot { isBundledSeedSample(it) }
+                loadedList.addAll(filtered.takeLast(MAX_SAMPLES))
+                needsFullCompact = true
+            } catch (_: Exception) {
             }
         }
 
-        // Migrate existing live samples from legacy direct_ssh_history.json for eth6, excluding seeded CSV rows
         if (loadedList.isEmpty() && cacheKey == "${SshCollector.MODE_SSH}_eth6") {
             val legacySshFile = File(context.filesDir, "direct_ssh_history.json")
             if (legacySshFile.exists()) {
                 try {
-                    val json = legacySshFile.readText()
+                    val json = legacySshFile.readText(Charsets.UTF_8)
                     val type = object : TypeToken<List<TelemetrySample>>() {}.type
                     val list: List<TelemetrySample> = gson.fromJson(json, type) ?: emptyList()
-                    val liveOnly = list.filterNot { isBundledSeedSample(it) }
+                    val liveOnly = list.filterNot { isBundledSeedSample(it) }.takeLast(MAX_SAMPLES)
                     if (liveOnly.isNotEmpty()) {
                         loadedList.addAll(liveOnly)
-                        purgedSeedData = true
+                        needsFullCompact = true
                     }
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
             }
         }
 
-        // Only seed OFFLINE mode from bundled asset CSV (never pollute live Direct SSH or Server modes)
         if (loadedList.isEmpty() && mode == SshCollector.MODE_OFFLINE) {
             seedFromAssets(context, loadedList)
-            save(context, cacheKey, loadedList)
-        } else if (purgedSeedData) {
-            save(context, cacheKey, loadedList)
+            needsFullCompact = true
+        }
+
+        if (needsFullCompact) {
+            compactJsonl(context, cacheKey, loadedList)
+            if (legacyJsonFile.exists() && jsonlFile.exists()) {
+                legacyJsonFile.delete()
+            }
+        } else {
+            fileLineCounts[cacheKey] = lineCount
         }
 
         modeCaches[cacheKey] = loadedList
@@ -121,9 +152,9 @@ object TelemetryRepository {
     private fun seedFromAssets(context: Context, targetList: MutableList<TelemetrySample>) {
         try {
             context.assets.open("initial_telemetry.csv").use { inputStream ->
-                InputStreamReader(inputStream).useLines { lines ->
+                InputStreamReader(inputStream, Charsets.UTF_8).useLines { lines ->
                     val iterator = lines.iterator()
-                    if (iterator.hasNext()) iterator.next() // skip header
+                    if (iterator.hasNext()) iterator.next()
                     for (line in iterator) {
                         val parts = line.split(",")
                         if (parts.size >= 9) {
@@ -145,8 +176,7 @@ object TelemetryRepository {
                     }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
         }
     }
 
@@ -162,18 +192,44 @@ object TelemetryRepository {
             list.subList(0, trimCount).clear()
         }
         modeCaches[cacheKey] = list
-        save(context, cacheKey, list)
+
+        val currentLines = (fileLineCounts[cacheKey] ?: list.size) + 1
+        if (currentLines > COMPACT_THRESHOLD) {
+            compactJsonl(context, cacheKey, list)
+        } else {
+            appendSingleLine(context, cacheKey, sample)
+            fileLineCounts[cacheKey] = currentLines
+        }
     }
 
-    @Synchronized
-    fun setSamples(context: Context, newSamples: List<TelemetrySample>, explicitMode: String? = null) {
-        val mode = resolveMode(context, explicitMode)
-        val cacheKey = resolveCacheKey(context, mode)
-        initialize(context, mode)
-        if (newSamples.isNotEmpty()) {
-            val list = newSamples.takeLast(MAX_SAMPLES).toMutableList()
-            modeCaches[cacheKey] = list
-            save(context, cacheKey, list)
+    private fun appendSingleLine(context: Context, cacheKey: String, sample: TelemetrySample) {
+        try {
+            val file = File(context.filesDir, getJsonlFileName(cacheKey))
+            val lineBytes = (gson.toJson(sample) + "\n").toByteArray(Charsets.UTF_8)
+            FileOutputStream(file, true).use { out ->
+                out.write(lineBytes)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun compactJsonl(context: Context, cacheKey: String, list: List<TelemetrySample>) {
+        try {
+            val fileName = getJsonlFileName(cacheKey)
+            val file = File(context.filesDir, fileName)
+            val tmpFile = File(context.filesDir, "$fileName.tmp")
+            tmpFile.bufferedWriter(Charsets.UTF_8).use { writer ->
+                for (s in list) {
+                    writer.write(gson.toJson(s))
+                    writer.newLine()
+                }
+            }
+            if (!tmpFile.renameTo(file)) {
+                tmpFile.copyTo(file, overwrite = true)
+                tmpFile.delete()
+            }
+            fileLineCounts[cacheKey] = list.size
+        } catch (_: Exception) {
         }
     }
 
@@ -188,54 +244,22 @@ object TelemetryRepository {
 
     @Synchronized
     fun getLatestSample(context: Context, explicitMode: String? = null): TelemetrySample? {
-        val list = getAllSamples(context, explicitMode)
-        return list.lastOrNull()
-    }
-
-    @Synchronized
-    private fun save(context: Context, cacheKey: String, list: List<TelemetrySample>) {
-        try {
-            val fileName = getFileName(cacheKey)
-            val file = File(context.filesDir, fileName)
-            val tmpFile = File(context.filesDir, "$fileName.tmp")
-            val json = gson.toJson(list)
-            tmpFile.writeText(json, Charsets.UTF_8)
-            if (!tmpFile.renameTo(file)) {
-                tmpFile.copyTo(file, overwrite = true)
-                tmpFile.delete()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    @Synchronized
-    fun toJsonBundle(context: Context, explicitMode: String? = null): String {
         val mode = resolveMode(context, explicitMode)
-        val samples = getAllSamples(context, mode)
-        val latest = samples.lastOrNull()
-        val labels = mutableListOf<String>()
-        val fullTimestamps = mutableListOf<String>()
-        val opticData = mutableListOf<Double>()
-        val cpu0Data = mutableListOf<Double>()
-        val cpu1Data = mutableListOf<Double>()
-        val pingData = mutableListOf<Double>()
+        val cacheKey = resolveCacheKey(context, mode)
+        initialize(context, mode)
+        return modeCaches[cacheKey]?.lastOrNull()
+    }
 
-        for (s in samples) {
-            fullTimestamps.add(s.timestamp)
-            val timeLabel = if (s.timestamp.contains(" ")) {
-                val t = s.timestamp.split(" ")[1]
-                t.substring(0, minOf(5, t.length))
-            } else {
-                s.timestamp
-            }
-            labels.add(timeLabel)
-            opticData.add(s.opticTemp)
-            cpu0Data.add(s.cpu0Temp)
-            cpu1Data.add(s.cpu1Temp)
-            pingData.add(s.pingMs)
+    private fun formatShortTimeLabel(timestamp: String): String {
+        return if (timestamp.contains(" ")) {
+            val t = timestamp.split(" ")[1]
+            t.substring(0, minOf(5, t.length))
+        } else {
+            timestamp
         }
+    }
 
+    private fun buildDisplayMetadata(context: Context, mode: String): Map<String, Any> {
         val prefs = context.getSharedPreferences(SshCollector.PREFS_NAME, Context.MODE_PRIVATE)
         val pingTargetLabel = prefs.getString(SshCollector.KEY_PING_TARGET_LABEL, "1.1.1.1 (Cloudflare)") ?: "1.1.1.1 (Cloudflare)"
         val savedDevName = prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME) ?: SshCollector.DEFAULT_DEVICE_NAME
@@ -263,20 +287,12 @@ object TelemetryRepository {
             SshCollector.THEME_LIGHT -> true
             SshCollector.THEME_DARK -> false
             else -> {
-                val nightModeFlags = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-                nightModeFlags != android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                nightModeFlags != Configuration.UI_MODE_NIGHT_YES
             }
         }
 
-        val bundle = mapOf(
-            "latest" to latest,
-            "sampleCount" to samples.size,
-            "labels" to labels,
-            "fullTimestamps" to fullTimestamps,
-            "opticData" to opticData,
-            "cpu0Data" to cpu0Data,
-            "cpu1Data" to cpu1Data,
-            "pingData" to pingData,
+        return mapOf(
             "deviceName" to deviceName,
             "portName" to portName,
             "pingTarget" to pingTargetLabel,
@@ -286,7 +302,62 @@ object TelemetryRepository {
             "threshold" to thresholdC,
             "isLight" to isLight
         )
+    }
+
+    @Synchronized
+    fun toJsonBundle(context: Context, explicitMode: String? = null): String {
+        val mode = resolveMode(context, explicitMode)
+        val samples = getAllSamples(context, mode)
+        val latest = samples.lastOrNull()
+        val size = samples.size
+        val labels = ArrayList<String>(size)
+        val fullTimestamps = ArrayList<String>(size)
+        val opticData = ArrayList<Double>(size)
+        val cpu0Data = ArrayList<Double>(size)
+        val cpu1Data = ArrayList<Double>(size)
+        val pingData = ArrayList<Double>(size)
+
+        for (s in samples) {
+            fullTimestamps.add(s.timestamp)
+            labels.add(formatShortTimeLabel(s.timestamp))
+            opticData.add(s.opticTemp)
+            cpu0Data.add(s.cpu0Temp)
+            cpu1Data.add(s.cpu1Temp)
+            pingData.add(s.pingMs)
+        }
+
+        val bundle = LinkedHashMap<String, Any?>().apply {
+            put("type", "bundle")
+            put("latest", latest)
+            put("sampleCount", size)
+            put("labels", labels)
+            put("fullTimestamps", fullTimestamps)
+            put("opticData", opticData)
+            put("cpu0Data", cpu0Data)
+            put("cpu1Data", cpu1Data)
+            put("pingData", pingData)
+            putAll(buildDisplayMetadata(context, mode))
+        }
 
         return gson.toJson(bundle)
+    }
+
+    /**
+     * Serializes a lightweight single-sample incremental delta (~300 bytes) for O(1) WebView chart updates.
+     */
+    @Synchronized
+    fun toIncrementalDeltaJson(context: Context, sample: TelemetrySample, explicitMode: String? = null): String {
+        val mode = resolveMode(context, explicitMode)
+        val cacheKey = resolveCacheKey(context, mode)
+        val count = modeCaches[cacheKey]?.size ?: 1
+        val delta = LinkedHashMap<String, Any?>().apply {
+            put("type", "delta")
+            put("sample", sample)
+            put("timeLabel", formatShortTimeLabel(sample.timestamp))
+            put("sampleCount", count)
+            put("maxSamples", MAX_SAMPLES)
+            putAll(buildDisplayMetadata(context, mode))
+        }
+        return gson.toJson(delta)
     }
 }

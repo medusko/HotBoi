@@ -22,22 +22,20 @@ object NotificationHelper {
     private const val ALERT_COOLDOWN_MS = 3 * 60 * 1000L // 3 minutes
 
     fun createNotificationChannel(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "High priority push notifications when optical transceiver or CPU temperature exceeds threshold"
-                enableLights(true)
-                lightColor = Color.RED
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 400, 200, 400)
-                setShowBadge(true)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "High priority push notifications when optical transceiver or CPU temperature exceeds threshold"
+            enableLights(true)
+            lightColor = Color.RED
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 400, 200, 400)
+            setShowBadge(true)
         }
+        notificationManager.createNotificationChannel(channel)
     }
 
     fun hasNotificationPermission(context: Context): Boolean {

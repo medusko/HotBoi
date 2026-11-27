@@ -11,16 +11,22 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 import java.util.concurrent.TimeUnit
 
 class HotBoiApp : Application() {
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
 
-        // Register BouncyCastle for ed25519 & curve25519 SSH key support on Android
+        // Register BouncyCastle for Ed25519 & Curve25519 SSH key support on Android
         try {
             Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
             Security.insertProviderAt(BouncyCastleProvider(), 1)
@@ -38,12 +44,14 @@ class HotBoiApp : Application() {
             })
         }
 
-        // Initialize Google Mobile Ads SDK when advertising is enabled
+        // Initialize Google Mobile Ads SDK off critical frame when advertising is enabled
         if (BuildConfig.SHOW_ADS) {
-            try {
-                com.google.android.gms.ads.MobileAds.initialize(this) {}
-            } catch (e: Exception) {
-                Log.e("HotBoiApp", "Failed to initialize MobileAds", e)
+            appScope.launch {
+                try {
+                    com.google.android.gms.ads.MobileAds.initialize(this@HotBoiApp) {}
+                } catch (e: Exception) {
+                    Log.e("HotBoiApp", "Failed to initialize MobileAds", e)
+                }
             }
         }
 
@@ -56,13 +64,12 @@ class HotBoiApp : Application() {
             else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
 
-        // Initialize high priority notification channel
         NotificationHelper.createNotificationChannel(this)
 
-        // Warm telemetry history cache asynchronously off the main thread
-        Thread {
+        // Warm JSONL telemetry history cache asynchronously on structured IO dispatcher
+        appScope.launch {
             TelemetryRepository.initialize(applicationContext)
-        }.start()
+        }
         rescheduleBackgroundWork(this)
     }
 

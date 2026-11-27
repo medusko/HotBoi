@@ -7,8 +7,14 @@ material = "1.12.0"
 swiperefreshlayout = "1.1.0"
 constraintlayout = "2.2.0"
 work = "2.10.0"
+webkit = "1.12.1"
+profileinstaller = "1.4.1"
+coroutines = "1.9.0"
 jsch = "0.2.25"
 gson = "2.11.0"
+playServicesAds = "23.6.0"
+bouncycastle = "1.79"
+junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -17,8 +23,14 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-swiperefreshlayout = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout", version.ref = "swiperefreshlayout" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
+bouncycastle-prov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

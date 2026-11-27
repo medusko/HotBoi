@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Default trust anchors; CollectorHttpClient enforces HTTPS for all WAN hosts
+         and restricts HTTP strictly to validated RFC1918 / loopback LAN collector endpoints. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Enforce strict HTTPS-only (no cleartext) on all external web, telemetry & ad domains -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">appassets.androidplatform.net</domain>
+        <domain includeSubdomains="true">medusko.com</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <domain includeSubdomains="true">google.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">gstatic.com</domain>
+        <domain includeSubdomains="true">googleadservices.com</domain>
+        <domain includeSubdomains="true">googlesyndication.com</domain>
+        <domain includeSubdomains="true">doubleclick.net</domain>
+        <domain includeSubdomains="true">admob.com</domain>
+    </domain-config>
+</network-security-config>

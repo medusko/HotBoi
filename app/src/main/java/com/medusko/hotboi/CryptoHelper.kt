@@ -11,8 +11,8 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Hardware-backed AES-256-GCM encryption helper for sensitive credentials at rest.
- * Uses Android Keystore so private keys and passwords cannot be extracted in plaintext from SharedPreferences.
- * Fully backwards-compatible with legacy unencrypted values.
+ * Uses Android Keystore so private keys, passwords, and API tokens are never persisted in plaintext.
+ * Fails closed on encryption errors (never falls back to returning plaintext).
  */
 object CryptoHelper {
 
@@ -41,30 +41,47 @@ object CryptoHelper {
         return keyGenerator.generateKey()
     }
 
-    fun encrypt(plainText: String?): String {
+    /**
+     * Encrypts [plainText] using Android Keystore AES-256-GCM.
+     * Returns null if encryption fails (fail-closed: callers must never persist plaintext on failure).
+     */
+    fun encryptOrNull(plainText: String?): String? {
         if (plainText.isNullOrEmpty()) return ""
+        var plainBytes: ByteArray? = null
         return try {
             val key = getOrCreateKey()
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, key)
             val iv = cipher.iv
-            val cipherBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+            plainBytes = plainText.toByteArray(Charsets.UTF_8)
+            val cipherBytes = cipher.doFinal(plainBytes)
             val combined = ByteArray(iv.size + cipherBytes.size)
             System.arraycopy(iv, 0, combined, 0, iv.size)
             System.arraycopy(cipherBytes, 0, combined, iv.size, cipherBytes.size)
             PREFIX + Base64.encodeToString(combined, Base64.NO_WRAP)
         } catch (e: Exception) {
-            ErrorLogManager.logError("Crypto Encrypt Error", e)
-            plainText
+            ErrorLogManager.logError("Crypto Encrypt Error (Fail-Closed)", e)
+            null
+        } finally {
+            plainBytes?.fill(0)
         }
+    }
+
+    /**
+     * Fail-closed convenience wrapper: returns empty string instead of leaking plaintext if Keystore fails.
+     */
+    fun encrypt(plainText: String?): String {
+        if (plainText.isNullOrEmpty()) return ""
+        return encryptOrNull(plainText) ?: ""
     }
 
     fun decrypt(cipherText: String?): String {
         if (cipherText.isNullOrEmpty()) return ""
         if (!cipherText.startsWith(PREFIX)) {
-            // Legacy plaintext fallback
+            // Backwards-compatible read of pre-Keystore values; re-saved encrypted on next save
             return cipherText
         }
+        var plainBytes: ByteArray? = null
         return try {
             val rawB64 = cipherText.removePrefix(PREFIX)
             val combined = Base64.decode(rawB64, Base64.NO_WRAP)
@@ -79,11 +96,13 @@ object CryptoHelper {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             val spec = GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv)
             cipher.init(Cipher.DECRYPT_MODE, key, spec)
-            val plainBytes = cipher.doFinal(cipherBytes)
+            plainBytes = cipher.doFinal(cipherBytes)
             String(plainBytes, Charsets.UTF_8)
         } catch (e: Exception) {
             ErrorLogManager.logError("Crypto Decrypt Error", e)
             ""
+        } finally {
+            plainBytes?.fill(0)
         }
     }
 }

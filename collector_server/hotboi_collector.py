@@ -3,12 +3,19 @@
 HotBoi Telemetry Collector & Local Web Server
 Cross-platform: macOS, Windows 10/11, and Linux.
 
-Collects telemetry from UniFi Gateway SFP+ optical module, logs to CSV & JSON,
+Collects telemetry from Gateway SFP+ optical module, logs to CSV & JSON,
 and serves a local HTTP dashboard & API on port 8080.
+
+Security defaults:
+- Binds to 127.0.0.1 by default (pass --bind 0.0.0.0 for LAN mobile access).
+- Enforces StrictHostKeyChecking=accept-new (TOFU) instead of disabling SSH host verification.
+- Never assigns 192.168.1.2/24 on the gateway interface unless --pon-stick-subnet is explicitly passed.
+- Supports --api-token (or HOTBOI_API_TOKEN env var) via X-HotBoi-Token / Bearer header and drops wildcard CORS on mutations.
 """
 
 import os
 import re
+import hmac
 import time
 import json
 import base64
@@ -28,6 +35,7 @@ DEFAULT_PORT = 22
 DEFAULT_SFP_IFACE = "eth6"
 DEFAULT_PING_TARGET = "1.1.1.1"
 DEFAULT_INTERVAL_SEC = 60
+DEFAULT_BIND_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8080
 MAX_HISTORY_POINTS = 2500
 CSV_COMPACT_THRESHOLD = 5000
@@ -48,6 +56,7 @@ CSV_HEADER = "timestamp,optic_temp,cpu0_temp,cpu1_temp,ploam,rx_power,tx_power,b
 # In-memory latest sample cache, bounded history deque & dynamic configuration
 current_ping_target = DEFAULT_PING_TARGET
 current_poll_interval = DEFAULT_INTERVAL_SEC
+configured_api_token = os.environ.get("HOTBOI_API_TOKEN", "").strip()
 current_telemetry = {
     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     "optic_temp": 42.0,
@@ -59,7 +68,7 @@ current_telemetry = {
     "bias_ma": 15.0,
     "ping_ms": 7.5,
     "ping_target": current_ping_target,
-    "device_name": "UniFi Cloud Gateway Fiber (White Bean)",
+    "device_name": "Primary Network Gateway",
     "sfp_port": "Port 7 SFP+"
 }
 
@@ -134,68 +143,85 @@ def init_history_from_csv():
         cached_history_bytes = None
 
 
-def query_gateway_ssh(host: str, port: int, user: str, key_path: str, sfp_iface: str, ping_target: str) -> dict:
+def query_gateway_ssh(
+    host: str,
+    port: int,
+    user: str,
+    key_path: str,
+    sfp_iface: str,
+    ping_target: str,
+    allow_pon_subnet: bool = False
+) -> dict:
     safe_host = validate_host(host, DEFAULT_GATEWAY)
     safe_user = validate_user(user, DEFAULT_USER)
     safe_iface = validate_iface(sfp_iface, DEFAULT_SFP_IFACE)
     safe_target = validate_host(ping_target, DEFAULT_PING_TARGET)
+    auto_pon_flag = "1" if allow_pon_subnet else "0"
 
-    iface_lit = json.dumps(safe_iface)
-    target_lit = json.dumps(safe_target)
+    # Pure POSIX shell probe matching the Android Direct SSH engine (no python3 needed on gateway)
+    remote_command = f"""sh -c '
+IFACE="{safe_iface}"
+TARGET="{safe_target}"
+AUTO_PON="{auto_pon_flag}"
+ping_tmp="/tmp/.hb_ping_$$"
+(ping -c 1 -W 1 "$TARGET" > "$ping_tmp" 2>/dev/null) &
+ping_pid=$!
 
-    raw_script = f"""import subprocess, re, time
+net_path="/sys/class/net/$IFACE"
+operstate=$(cat "$net_path/operstate" 2>/dev/null || echo "unknown")
+carrier=$(cat "$net_path/carrier" 2>/dev/null || echo "0")
 
-IFACE = {iface_lit}
-TARGET = {target_lit}
+eth_out=$(ethtool -m "$IFACE" 2>/dev/null || true)
+optic_temp=$(printf "%s\\n" "$eth_out" | awk -F":" "/Module temperature/ {{ if (match(\\$2, /-?[0-9]+(\\.[0-9]+)?/)) {{ print substr(\\$2, RSTART, RLENGTH); exit }} }}")
+rx_pwr=$(printf "%s\\n" "$eth_out" | awk -F"/" "/(Receiver signal average optical power|Rx power)[[:space:]]*:/ {{ if (match(\\$2, /-?[0-9]+(\\.[0-9]+)?/)) {{ print substr(\\$2, RSTART, RLENGTH); exit }} }}")
+tx_pwr=$(printf "%s\\n" "$eth_out" | awk -F"/" "/(Laser output power|Laser transmit average optical power)[[:space:]]*:/ {{ if (match(\\$2, /-?[0-9]+(\\.[0-9]+)?/)) {{ print substr(\\$2, RSTART, RLENGTH); exit }} }}")
+bias=$(printf "%s\\n" "$eth_out" | awk -F":" "/Laser bias current/ {{ if (match(\\$2, /[0-9]+(\\.[0-9]+)?/)) {{ print substr(\\$2, RSTART, RLENGTH); exit }} }}")
 
-ping_proc = subprocess.Popen(["ping", "-c", "2", "-W", "1", "--", TARGET], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+c0=""; c1=""; ploam=""
+has_stick_ip=0
+ip_out=$(ip -4 -o addr show 2>/dev/null || true)
+if printf "%s\\n" "$ip_out" | grep -q " $IFACE .*192\\.168\\.1\\.2/"; then
+  has_stick_ip=1
+elif [ "$AUTO_PON" = "1" ] && ! printf "%s\\n" "$ip_out" | grep -q "192\\.168\\.1\\.2/"; then
+  ip addr add 192.168.1.2/24 dev "$IFACE" >/dev/null 2>&1 && has_stick_ip=1
+fi
 
-addr_out = subprocess.run(["ip", "-4", "addr", "show", "dev", IFACE], capture_output=True, text=True).stdout
-if "192.168.1.2/24" not in addr_out:
-    subprocess.run(["ip", "addr", "add", "192.168.1.2/24", "dev", IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+if [ "$has_stick_ip" = "1" ] && ping -I "$IFACE" -c 1 -W 1 192.168.1.1 >/dev/null 2>&1; then
+  stick_out=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=2 -b 192.168.1.2 root@192.168.1.1 "cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp; pon psg" 2>/dev/null || true)
+  l1=$(printf "%s\\n" "$stick_out" | sed -n "1p" | tr -d "\\r ")
+  l2=$(printf "%s\\n" "$stick_out" | sed -n "2p" | tr -d "\\r ")
+  case "$l1" in ""|*[!0-9]*) ;; *) c0=$(awk -v val="$l1" "BEGIN {{ printf \\"%.1f\\", val / 1000.0 }}") ;; esac
+  case "$l2" in ""|*[!0-9]*) ;; *) c1=$(awk -v val="$l2" "BEGIN {{ printf \\"%.1f\\", val / 1000.0 }}") ;; esac
+  case "$stick_out" in *current=51*) ploam="O5.1" ;; *current=12*) ploam="O1.2" ;; *) [ -n "$c0" ] && ploam="O5.1" ;; esac
+fi
 
-ethtool_out = subprocess.run(["ethtool", "-m", IFACE], capture_output=True, text=True).stdout
-temp_m = re.search(r"Module temperature\\s+:\\s+([\\d\\.]+)\\s+degrees C", ethtool_out)
-rx_m = re.search(r"Receiver signal average optical power\\s+:\\s+[\\d\\.]+\\s+mW\\s+/\\s+([-\\d\\.]+)\\s+dBm", ethtool_out)
-tx_m = re.search(r"Laser output power\\s+:\\s+[\\d\\.]+\\s+mW\\s+/\\s+([-\\d\\.]+)\\s+dBm", ethtool_out)
-bias_m = re.search(r"Laser bias current\\s+:\\s+([\\d\\.]+)\\s+mA", ethtool_out)
+if [ -z "$c0" ]; then
+  for tz in /sys/class/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input; do
+    [ -r "$tz" ] || continue
+    val=$(cat "$tz" 2>/dev/null | tr -d "\\r ")
+    case "$val" in ""|*[!0-9-]*) ;; *)
+      if [ "$val" -ge 10000 ] 2>/dev/null && [ "$val" -le 125000 ] 2>/dev/null; then
+        t_fmt=$(awk -v v="$val" "BEGIN {{ printf \\"%.1f\\", v / 1000.0 }}")
+        if [ -z "$c0" ]; then c0="$t_fmt"; elif [ -z "$c1" ]; then c1="$t_fmt"; break; fi
+      fi
+    ;; esac
+  done
+  [ -n "$c0" ] && [ -z "$c1" ] && c1="$c0"
+fi
 
-optic_temp = temp_m.group(1) if temp_m else ""
-rx_pwr = rx_m.group(1) if rx_m else ""
-tx_pwr = tx_m.group(1) if tx_m else ""
-bias = bias_m.group(1) if bias_m else ""
-
-def get_stick():
-    return subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2", "root@192.168.1.1",
-      "cat /sys/class/thermal/thermal_zone0/temp; cat /sys/class/thermal/thermal_zone1/temp; pon psg"],
-      capture_output=True, text=True, timeout=3).stdout
-
-stick_out = get_stick()
-if not stick_out:
-    time.sleep(0.5)
-    stick_out = get_stick()
-
-lines = stick_out.strip().splitlines()
-c0 = f"{{int(lines[0])/1000:.1f}}" if len(lines) > 0 and lines[0].isdigit() else ""
-c1 = f"{{int(lines[1])/1000:.1f}}" if len(lines) > 1 and lines[1].isdigit() else ""
-ploam = "O5.1" if "current=51" in stick_out else ("O1.2" if "current=12" in stick_out else ("O5.1" if c0 else ""))
-
-try:
-    ping_out = ping_proc.communicate(timeout=4)[0] or ""
-except Exception:
-    ping_proc.kill()
-    ping_out = ""
-p_m = re.search(r"avg.*?=\\s*[\\d\\.]+/([\\d\\.]+)/", ping_out)
-ping_val = p_m.group(1) if p_m else "8.5"
-
-print(f"{{optic_temp}}|{{c0}}|{{c1}}|{{ploam}}|{{rx_pwr}}|{{tx_pwr}}|{{bias}}|{{ping_val}}")
-"""
-    b64_script = base64.b64encode(raw_script.encode("utf-8")).decode("ascii")
-    remote_command = f"python3 -c \"import base64; exec(base64.b64decode('{b64_script}').decode('utf-8'))\""
+[ -z "$optic_temp" ] && [ -n "$c0" ] && optic_temp="$c0"
+[ -z "$ploam" ] && ploam=$([ "$carrier" = "1" ] || [ "$operstate" = "up" ] && echo "LINK UP" || echo "STANDBY")
+wait "$ping_pid" 2>/dev/null || true
+ping_val=$(awk -F"=" "/avg/ {{ split(\\$2, a, \\"/\\"); gsub(/[^0-9.]/, \\"\\", a[2]); if (a[2] != \\"\\") {{ print a[2]; exit }} }}" "$ping_tmp" 2>/dev/null)
+rm -f "$ping_tmp"
+[ -z "$ping_val" ] && ping_val="0.0"
+echo "$optic_temp|$c0|$c1|$ploam|$rx_pwr|$tx_pwr|$bias|$ping_val"
+'"""
 
     ssh_cmd = [
         "ssh",
-        "-o", "StrictHostKeyChecking=no",
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ConnectTimeout=5",
         "-p", str(int(port)),
     ]
@@ -236,8 +262,8 @@ print(f"{{optic_temp}}|{{c0}}|{{c1}}|{{ploam}}|{{rx_pwr}}|{{tx_pwr}}|{{bias}}|{{
         "tx_power": tx,
         "bias_ma": bias,
         "ping_ms": ping_val,
-        "device_name": "UniFi Cloud Gateway Fiber (White Bean)",
-        "sfp_port": "Port 7 SFP+"
+        "device_name": "Primary Network Gateway",
+        "sfp_port": f"SFP+ ({safe_iface})"
     }
 
 
@@ -330,7 +356,7 @@ def get_history_bundle_bytes() -> bytes:
             "cpu0Data": cpu0Data,
             "cpu1Data": cpu1Data,
             "pingData": pingData,
-            "deviceName": latest.get("device_name", "Universal SFP+ Device"),
+            "deviceName": latest.get("device_name", "Primary Network Gateway"),
             "portName": latest.get("sfp_port", "Port 7 SFP+"),
             "pingTarget": target,
             "ping_target": target,
@@ -340,13 +366,13 @@ def get_history_bundle_bytes() -> bytes:
         return cached_history_bytes
 
 
-def collection_loop(host, port, user, key_path, sfp_iface, interval):
+def collection_loop(host, port, user, key_path, sfp_iface, interval, allow_pon_subnet):
     print(f"[*] Starting telemetry polling every {interval}s from {user}@{host}:{port} ({sfp_iface})...", flush=True)
     while True:
         try:
             with telemetry_lock:
                 target = current_ping_target
-            sample = query_gateway_ssh(host, port, user, key_path, sfp_iface, target)
+            sample = query_gateway_ssh(host, port, user, key_path, sfp_iface, target, allow_pon_subnet)
             sample["ping_target"] = target
             record_sample(sample)
             print(f"[{sample['timestamp']}] Laser: {sample['optic_temp']}°C | CPU0: {sample['cpu0_temp']}°C | Rx: {sample['rx_power']} dBm | Ping ({target}): {sample['ping_ms']} ms", flush=True)
@@ -364,20 +390,55 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
     timeout = 10
 
     def log_message(self, format, *args):
-        # Quiet standard HTTP logs to keep console clean
         pass
 
+    def _is_authorized(self) -> bool:
+        if not configured_api_token:
+            return True
+        provided = (self.headers.get("X-HotBoi-Token") or "").strip()
+        if not provided:
+            auth_hdr = (self.headers.get("Authorization") or "").strip()
+            if auth_hdr.lower().startswith("bearer "):
+                provided = auth_hdr[7:].strip()
+        if not provided:
+            return False
+        return hmac.compare_digest(provided.encode("utf-8"), configured_api_token.encode("utf-8"))
+
+    def _reject_unauthorized(self):
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Unauthorized: valid X-HotBoi-Token required"}).encode("utf-8"))
+
+    def _is_cross_origin_browser_mutation(self) -> bool:
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return False
+        host_hdr = (self.headers.get("Host") or "").strip()
+        parsed_origin = urlparse(origin)
+        return parsed_origin.netloc != host_hdr
+
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # Do not advertise wildcard CORS for cross-origin browser mutations
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.end_headers()
 
     def do_POST(self):
         global current_ping_target, cached_history_bytes
         parsed = urlparse(self.path)
-        if parsed.path in ["/api/config"]:
+        if parsed.path == "/api/config":
+            if self._is_cross_origin_browser_mutation():
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Cross-origin POST forbidden"}).encode("utf-8"))
+                return
+
+            if not self._is_authorized():
+                self._reject_unauthorized()
+                return
+
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
             except ValueError:
@@ -386,7 +447,6 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
             if content_length <= 0 or content_length > MAX_POST_BODY_BYTES:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid Content-Length"}).encode("utf-8"))
                 return
@@ -399,7 +459,6 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
                     if not SAFE_HOST_RE.match(candidate):
                         self.send_response(400)
                         self.send_header("Content-Type", "application/json")
-                        self.send_header("Access-Control-Allow-Origin", "*")
                         self.end_headers()
                         self.wfile.write(json.dumps({"error": "Invalid ping_target format"}).encode("utf-8"))
                         return
@@ -413,13 +472,11 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
                     resp_target = current_ping_target
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "ok", "ping_target": resp_target}).encode("utf-8"))
             except Exception as e:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
@@ -429,10 +486,15 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path in ["/api/telemetry", "/telemetry.json", "/api/history", "/history.json", "/api/config"]:
+            if not self._is_authorized():
+                self._reject_unauthorized()
+                return
+
         if parsed.path in ["/api/telemetry", "/telemetry.json"]:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             with telemetry_lock:
                 data = json.dumps(current_telemetry).encode("utf-8")
@@ -442,7 +504,7 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
         if parsed.path in ["/api/history", "/history.json"]:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(get_history_bundle_bytes())
             return
@@ -450,13 +512,14 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/config":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             with telemetry_lock:
                 cfg = {
                     "status": "ok",
                     "ping_target": current_ping_target,
-                    "poll_interval": current_poll_interval
+                    "poll_interval": current_poll_interval,
+                    "auth_enabled": bool(configured_api_token)
                 }
             self.wfile.write(json.dumps(cfg).encode("utf-8"))
             return
@@ -492,25 +555,29 @@ class HotBoiHttpHandler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="HotBoi SFP+ Telemetry Collector & Web Server")
-    parser.add_argument("--host", default=DEFAULT_GATEWAY, help="UniFi Gateway IP (default: 192.168.0.254)")
+    parser.add_argument("--host", default=DEFAULT_GATEWAY, help="Gateway IP (default: 192.168.0.254)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="SSH port (default: 22)")
     parser.add_argument("--user", default=DEFAULT_USER, help="SSH user (default: root)")
     parser.add_argument("--key", default=get_default_ssh_key(), help="SSH private key path (e.g. ~/.ssh/id_ed25519)")
     parser.add_argument("--sfp", default=DEFAULT_SFP_IFACE, help="SFP+ interface (default: eth6)")
     parser.add_argument("--ping", default=DEFAULT_PING_TARGET, help="Ping target (default: 1.1.1.1)")
     parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL_SEC, help="Poll interval in seconds (default: 60)")
+    parser.add_argument("--bind", default=DEFAULT_BIND_HOST, help="HTTP bind address (default: 127.0.0.1; pass 0.0.0.0 for LAN)")
     parser.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT, help="HTTP server port (default: 8080)")
+    parser.add_argument("--api-token", default="", help="Optional API token (or set HOTBOI_API_TOKEN env var)")
+    parser.add_argument("--pon-stick-subnet", action="store_true", help="Opt-in: auto-assign 192.168.1.2/24 on SFP+ interface for PON sticks")
     args = parser.parse_args()
 
-    global current_ping_target, current_poll_interval
+    global current_ping_target, current_poll_interval, configured_api_token
     current_ping_target = validate_host(args.ping, DEFAULT_PING_TARGET)
     current_poll_interval = max(5, int(args.interval))
+    if args.api_token.strip():
+        configured_api_token = args.api_token.strip()
 
     init_history_from_csv()
     with telemetry_lock:
         current_telemetry["ping_target"] = current_ping_target
 
-    # Start polling worker thread
     collector_thread = threading.Thread(
         target=collection_loop,
         args=(
@@ -519,18 +586,21 @@ def main():
             validate_user(args.user, DEFAULT_USER),
             args.key,
             validate_iface(args.sfp, DEFAULT_SFP_IFACE),
-            current_poll_interval
+            current_poll_interval,
+            bool(args.pon_stick_subnet)
         ),
         daemon=True
     )
     collector_thread.start()
 
-    # Start multi-threaded HTTP server
-    server_address = ("0.0.0.0", args.http_port)
+    server_address = (args.bind, args.http_port)
     httpd = HotBoiThreadingHTTPServer(server_address, HotBoiHttpHandler)
-    print(f"[*] HotBoi Web Server running at http://localhost:{args.http_port}")
-    print(f"[*] Telemetry API available at http://localhost:{args.http_port}/api/telemetry")
-    print(f"[*] Press Ctrl+C to stop.")
+    print(f"[*] HotBoi Web Server bound to http://{args.bind}:{args.http_port}")
+    if args.bind == "127.0.0.1":
+        print("[*] Bound to localhost only (secure default). Pass --bind 0.0.0.0 to allow LAN phone connections.")
+    if configured_api_token:
+        print("[*] Token authentication ENABLED (X-HotBoi-Token required on /api/*).")
+    print("[*] Press Ctrl+C to stop.", flush=True)
 
     try:
         httpd.serve_forever()

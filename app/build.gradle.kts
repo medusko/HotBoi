@@ -26,6 +26,12 @@ val hasValidReleaseSigning = keystorePropertiesFile.exists() &&
     resolvedStoreFile != null &&
     resolvedStoreFile.exists()
 
+val testAdMobBannerId = "ca-app-pub-3940256099942544/6300978111"
+val releaseAdMobBannerId = (
+    keystoreProperties.getProperty("admobBannerUnitId")?.trim()
+        ?: System.getenv("HOTBOI_ADMOB_BANNER_ID")?.trim()
+    ).takeUnless { it.isNullOrBlank() } ?: testAdMobBannerId
+
 android {
     namespace = "com.medusko.hotboi"
     compileSdk = 36
@@ -40,6 +46,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("Boolean", "SHOW_ADS", "true")
+        buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"$testAdMobBannerId\"")
     }
 
     signingConfigs {
@@ -57,6 +64,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"$releaseAdMobBannerId\"")
             signingConfig = if (hasValidReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
@@ -70,6 +78,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"$testAdMobBannerId\"")
         }
     }
 
@@ -94,6 +103,10 @@ android {
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/BCKEY.DSA"
             excludes += "META-INF/BCKEY.SF"
+            // Strip unused BouncyCastle Post-Quantum lookup tables (~1.22 MB) & X.509 localization bundles
+            excludes += "org/bouncycastle/pqc/**"
+            excludes += "org/bouncycastle/x509/*.properties"
+            excludes += "org/bouncycastle/LICENSE"
         }
     }
 }
@@ -105,11 +118,14 @@ dependencies {
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.webkit)
+    implementation(libs.androidx.profileinstaller)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.jsch)
     implementation(libs.gson)
-    implementation("com.google.android.gms:play-services-ads:23.6.0")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
-    testImplementation("junit:junit:4.13.2")
+    implementation(libs.play.services.ads)
+    implementation(libs.bouncycastle.prov)
+    testImplementation(libs.junit)
 }
 
 gradle.taskGraph.whenReady {
