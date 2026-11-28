@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pure RemoteViews-safe layout (LinearLayout, FrameLayout, TextView, ImageView, ProgressBar) -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widgetRoot"
+    tools:ignore="UseAppTint"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_card_bg"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingVertical="11dp">
+
+    <!-- Header Row: Medusko Optical Icon + Title + Status Pill + 1-Tap Refresh Button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/ivWidgetLogo"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/ic_hotboi_notification"
+            android:tint="@color/accent_blue" />
+
+        <TextView
+            android:id="@+id/tvWidgetTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-black"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:text="HotBoi"
+            android:textColor="@color/text_primary"
+            android:textSize="14.5sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvWidgetState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/widget_status_pill_bg"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp"
+            android:singleLine="true"
+            android:text="O5.1"
+            android:textColor="@color/accent_blue"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <!-- 1-Tap Refresh Pill (swaps between refresh icon and spinning ProgressBar) -->
+        <FrameLayout
+            android:id="@+id/btnWidgetRefresh"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="@drawable/widget_tile_bg"
+            android:contentDescription="@string/refresh">
+
+            <ImageView
+                android:id="@+id/ivWidgetRefresh"
+                android:layout_width="15dp"
+                android:layout_height="15dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/refresh"
+                android:src="@drawable/ic_refresh"
+                android:tint="@color/text_primary" />
+
+            <ProgressBar
+                android:id="@+id/pbWidgetRefresh"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="15dp"
+                android:layout_height="15dp"
+                android:layout_gravity="center"
+                android:indeterminate="true"
+                android:indeterminateTint="@color/accent_blue"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- 4-Column Telemetry Tiles: Optic Temp, CPU 0, Rx Power, Ping -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- Tile 1: SFP+ Optic Temp -->
+        <LinearLayout
+            android:id="@+id/tileWidgetOptic"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="5dp">
+
+            <TextView
+                android:id="@+id/lblWidgetOptic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:letterSpacing="0.04"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="OPTIC"
+                android:textColor="@color/text_secondary"
+                android:textSize="9.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvWidgetOptic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="43.1°C"
+                android:textColor="@color/accent_blue"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Tile 2: CPU Core 0 Temp -->
+        <LinearLayout
+            android:id="@+id/tileWidgetCpu"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="5dp">
+
+            <TextView
+                android:id="@+id/lblWidgetCpu"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:letterSpacing="0.04"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="CPU 0"
+                android:textColor="@color/text_secondary"
+                android:textSize="9.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvWidgetCpu"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="55.8°C"
+                android:textColor="@color/accent_amber"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Tile 3: Rx Optical Power -->
+        <LinearLayout
+            android:id="@+id/tileWidgetRx"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="5dp">
+
+            <TextView
+                android:id="@+id/lblWidgetRx"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:letterSpacing="0.04"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="RX DBM"
+                android:textColor="@color/text_secondary"
+                android:textSize="9.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvWidgetRx"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="-22.2"
+                android:textColor="@color/accent_purple"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Tile 4: Ping Latency -->
+        <LinearLayout
+            android:id="@+id/tileWidgetPing"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="5dp">
+
+            <TextView
+                android:id="@+id/lblWidgetPing"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:letterSpacing="0.04"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="PING"
+                android:textColor="@color/text_secondary"
+                android:textSize="9.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvWidgetPing"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:text="8.4 ms"
+                android:textColor="@color/accent_orange"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Footer Metadata Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tvWidgetFooterLeft"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:text="Primary Network Gateway • eth6"
+            android:textColor="@color/text_muted"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/tvWidgetFooterRight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:text="Tap ↻ to probe"
+            android:textColor="@color/text_muted"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+</LinearLayout>

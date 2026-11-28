@@ -14,8 +14,11 @@
     <color name="accent_emerald">#2E6BD9</color>
     <color name="accent_purple">#7E22CE</color>
     <color name="accent_amber">#B45309</color>
+    <color name="accent_orange">#D97706</color>
     <color name="text_beta">#B45309</color>
     <color name="alert_red">#DC2626</color>
+    <color name="widget_pill_blue_bg">#1F2E6BD9</color>
+    <color name="widget_pill_red_bg">#1FDC2626</color>
 
     <!-- Typography -->
     <color name="text_primary">#1E1A16</color>

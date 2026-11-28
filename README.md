@@ -1,13 +1,10 @@
-# HotBoi 🔥 — XGS-PON SFP+ Thermal Monitor
+# HotBoi — Universal SFP+ / SFP28 Optical & Gateway Thermal Monitor
 
-**HotBoi** is an ultra-lightweight, standalone native Android telemetry monitor and thermal watchdog for your **UniFi Cloud Gateway (White Bean / UCG-Fiber)** and **XGS-PON SFP+ optical stick transceiver**.
+**HotBoi** is an ultra-lightweight, standalone native Android telemetry monitor, home screen widget, and thermal watchdog for network gateways, switches, and **SFP+ / SFP28 optical transceivers** (UniFi Cloud Gateway, MikroTik, OpenWrt, EdgeOS, Debian/Linux routers, and XGS-PON sticks).
 
 ---
 
 ## 🧪 Google Play Closed Testing (Join the Beta)
-
-> [!NOTE]
-> Closed testing will begin **later this week** once Google finishes reviewing the initial track release.
 
 - **Google Group:** https://groups.google.com/g/medusko-app-testers
 - **Web Link (Join test):** https://play.google.com/apps/testing/com.medusko.hotboi
@@ -17,97 +14,50 @@
 1. Join the **Medusko App Testers** Google Group above using your Google account.
 2. Click the Web link to opt-in ("Become a tester").
 3. Download **HotBoi** from the Android Play Store link.
-4. Keep the app installed for 14 days. Drop a screenshot below and I will test your app in return!
+4. Keep the app installed for 14 days to help complete closed testing!
 
 ---
 
-## 📥 Downloads (Release Candidate 1)
+## 📥 Downloads (Release Candidate 3)
 
-All updates and release notes are documented in our [**CHANGELOG.md**](CHANGELOG.md):
+All updates and release notes are documented in [**CHANGELOG.md**](CHANGELOG.md):
 
-- 📱 **[Download HotBoi for Android (`HotBoi-Android-v1.0.0-RC1.apk`)](https://github.com/medusko/HotBoi/releases/tag/v1.0.0-RC1)** *(Latest Release Candidate — 5.0 MB R8 minified, dedicated About & Diagnostics screen, 1-tap quick theme toggle, screen-off battery awareness, tactile haptics)*
+- 📱 **[Download Latest HotBoi Release (`v1.0.2-RC3`)](https://github.com/medusko/HotBoi/releases)** *(4.6 MB R8 full-mode minified APK, Medusko Home Screen Thermal Widget, pooled POSIX SSH engine, Cobalt & Warm Linen/Obsidian design parity with Keyboardy & Lagatron)*
 - 📋 **[View Full Changelog & Release Notes](CHANGELOG.md)**
 
 ---
 
-## ⚡ Self-Contained In-App Architecture
+## ⚡ Architecture & Key Capabilities
 
-HotBoi runs **100% on your Android phone** without requiring an external machine or cloud service:
+1. **Pooled On-Device SSH Telemetry Engine (`Zero Python Dependency`)**:
+   - Connects directly from your Android phone over SSH (`Ed25519`, `RSA`, or password) via `JSch` + `BouncyCastle` with strict `0600` TOFU `ssh_known_hosts` fingerprint pinning.
+   - Runs a pure POSIX `/bin/sh` + `awk` probe (`ethtool -m`, `/sys/class/thermal`, concurrent ICMP `ping`), collecting laser optics temperature, dual-core CPU temperatures, Rx/Tx optical power (dBm), laser bias current (mA), and latency in ~150 ms.
+   - Live **Gateway Port Scanner** discovers optical DOM interfaces (`eth6`, `eth7`, `sfp1`, etc.) automatically with isolated per-port JSONL history.
 
-1. **Direct On-Device SSH Telemetry Engine**:
-   - Directly connects from your phone to your UniFi Gateway (`192.168.0.254:22`) over home Wi-Fi via embedded `JSch` and `BouncyCastle` Ed25519 authentication.
-   - Collects laser optics temp, CPU Core 0/1 temps, optical Rx/Tx power, laser bias current, and gateway ping latency in ~1.2s.
-   - Saves to the local on-device database and dynamically updates the dashboard and Chart.js graphs.
+2. **Medusko Home Screen Thermal Widget**:
+   - Resizable `4x2` Day/Night Android Home Screen widget displaying **Optic Temp**, **CPU 0 Temp**, **Rx Power (dBm)**, **Ping Latency**, active link/PLOAM state pill, and **1-tap live refresh** with an inline spinner.
+   - Pin directly in 1 tap from **Settings → Appearance & Units → Pin Home Screen Thermal Widget**.
 
-2. **Automated Background Watchdog & Thermal Trip Alerts**:
-   - Uses Android's official **`WorkManager`** with Wi-Fi network constraints.
-   - Periodically polls the gateway in the background and logs the reading into local history.
-   - **Thermal Trip Alerts**: If temperatures exceed the configured safe threshold (default: 79°C), HotBoi fires a high-priority Android push notification.
+3. **Automated Background Watchdog & Thermal Trip Push Alerts**:
+   - Periodic Android **`WorkManager`** polling with network constraints and high-priority push notifications whenever optical or CPU temperature crosses your configured threshold (default `79°C` / `174.2°F`).
 
-3. **Screen-Off & Radio Power Optimizations (Parity with Lagatron)**:
-   - Foreground auto-refresh automatically detects screen sleep (`PowerManager.isInteractive`) to prevent waking up Wi-Fi or cellular radios when the screen is dark.
-   - R8 ProGuard bytecode minification and resource shrinking cuts release APK size by 50% (down to 5.0 MB).
-
-4. **Multi-Mode Server Fallback (Optional)**:
-   - Supports optional remote telemetry collection via macOS daemon, Windows background service, or Linux daemon when away from home.
-
----
-
-## ✨ Features & Interface
-
-- **Dedicated "About HotBoi" Diagnostics**: Tap the `(i)` info button in the top bar to inspect live engine connection state, active SFP+ interface (`eth6` / `eth8`), polling cadence, architecture pillars, and GitHub release links.
-- **1-Tap Quick Theme Toggle**: Switch instantly between Light Mode and Dark Mode with the Sun/Moon button right from the top bar.
-- **Tactile Haptic Feedback**: Subtle physical haptic response on pull-to-refresh, manual sync, and °C / °F unit toggle.
-- **Dual Temperature Units**: Instant one-tap conversion between Celsius (°C) and Fahrenheit (°F).
-- **Error Diagnostics Viewer**: Dedicated modal with copyable stack trace and active system reflection.
-
----
-
-## 📱 Installing on Your Phone
-
-The Release Candidate APK is ready at:  
-👉 `HotBoi-Android-v1.0.0-RC1.apk`
-
-### Option A: USB Sideload (Fastest if ADB connected)
-```bash
-adb install -r HotBoi-Android-v1.0.0-RC1.apk
-```
-
-### Option B: One-Tap Download from Your Phone Browser
-Start the local server temporarily on your Mac:
-```bash
-python3 server/hotboi_server.py
-```
-On your phone (connected to the same Wi-Fi), open Chrome and navigate to:  
-👉 **`http://192.168.0.134:8080/hotboi.apk`**
-
----
-
-## ⚙️ Initial App Setup
-
-1. Open **HotBoi** on your phone.
-2. Tap the **Settings (gear)** icon in the top right.
-3. Verify your Gateway settings:
-   - **Gateway IP**: `192.168.0.254`
-   - **SSH Port**: `22`
-   - **SSH User**: `root`
-   - **SSH Password**: *(Enter your UniFi OS root SSH password)*
-   - **Background Collection**: Checked (Every 1 Hour)
-   - **Trip Alert Threshold**: `79°C`
-4. Tap **Save**. HotBoi will immediately connect to your UniFi gateway and display live telemetry!
+4. **Security & Battery Efficiency by Default**:
+   - **AES-256-GCM Hardware Keystore**: Fail-closed credential encryption for SSH passwords, private keys, and server API tokens.
+   - **WAN HTTPS Enforcement**: Blocks cleartext HTTP to public hosts while supporting authenticated (`X-HotBoi-Token`) RFC1918/loopback/Tailscale LAN collector servers (`macOS`, `Windows`, `Linux`).
+   - **Append-Only JSONL + `WebViewAssetLoader`**: O(1) single-line disk writes and ~300-byte `WebMessageCompat` chart deltas with automatic screen-off & background timer suspension.
 
 ---
 
 ## 🏪 Building From Source
 
-- **Target SDK**: `35` (Android 15)
+- **Compile / Target SDK**: `36`
 - **Min SDK**: `26` (Android 8.0)
 
 ```bash
-export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-./gradlew assembleRelease
+./gradlew testDebugUnitTest assembleRelease bundleRelease
 ```
-Output: `app/build/outputs/apk/release/app-release.apk` (5.0 MB minified)
+- **Release APK**: `app/build/outputs/apk/release/app-release.apk` (~4.6 MB minified)
+- **Play Store Bundle**: `app/build/outputs/bundle/release/app-release.aab`
 
 ---
 
@@ -116,4 +66,3 @@ Output: `app/build/outputs/apk/release/app-release.apk` (5.0 MB minified)
 - **Website:** [medusko.com](https://medusko.com)
 - **Support Contact:** [support@medusko.com](mailto:support@medusko.com)
 - **Social:** [@meduskodev on Twitter](https://twitter.com/meduskodev)
-

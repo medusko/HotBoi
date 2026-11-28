@@ -2,89 +2,71 @@
 
 Cross-platform optical transceiver and gateway hardware thermal monitoring service for **macOS**, **Windows 10/11**, and **Linux (Debian / Ubuntu)**.
 
-HotBoi connects via SSH to your gateway or switch (UniFi, MikroTik, Cisco, Mellanox, or generic PON transceivers), polls SFP+/SFP28 optical diagnostics (temperature, laser bias current, optical TX/RX power, CPU core temperatures, PLOAM state, and ping latency), logs history to CSV/JSON, and serves a high-performance HTTP dashboard and JSON REST API on port `8080`.
+HotBoi connects via SSH (`StrictHostKeyChecking=accept-new`) using a lightweight pure POSIX `/bin/sh` + `awk` probe (zero `python3` dependency on the gateway), polls SFP+/SFP28 optical diagnostics (temperature, laser bias current, optical TX/RX power, CPU core temperatures, PLOAM state, and ping latency), logs bounded history to CSV/JSON, and serves the Medusko-themed HTTP dashboard and JSON REST API.
 
 ---
 
-## 🍏 macOS Deployment (launchd Service)
+## Security & CLI Flags
 
-Install as an automatic background service that survives reboots and user logouts:
+When run directly (`python3 hotboi_collector.py`), the collector binds to **`127.0.0.1:8080` by default** so it is not exposed on untrusted networks unless requested:
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--bind` | `127.0.0.1` | Pass `--bind 0.0.0.0` to allow LAN connections from the HotBoi Android app |
+| `--http-port` | `8080` | HTTP server port |
+| `--api-token` | `$HOTBOI_API_TOKEN` | Optional shared secret verified via `X-HotBoi-Token` or `Authorization: Bearer` |
+| `--pon-stick-subnet` | `false` | Opt-in flag to assign `192.168.1.2/24` on the SFP+ port when probing `192.168.1.1` PON sticks |
+| `--host` / `--port` / `--user` | `192.168.0.254` / `22` / `root` | Gateway SSH target |
+| `--sfp` | `eth6` | Gateway SFP+ / SFP28 Linux network interface |
+| `--ping` | `1.1.1.1` | ICMP latency probe target |
+| `--interval` | `60` | Poll interval in seconds |
+
+---
+
+## macOS Deployment (`launchd` Service)
+
+Install as an automatic background service (binds to `0.0.0.0:8080` by default for LAN phone access; override with `HOTBOI_BIND=127.0.0.1` or protect with `HOTBOI_API_TOKEN`):
 
 ```bash
 chmod +x install_macos_service.sh
-./install_macos_service.sh
+HOTBOI_API_TOKEN="your-lan-secret" ./install_macos_service.sh
 ```
 
 - **Installed Directory**: `~/.hotboi/`
-- **Service Configuration**: `~/Library/LaunchAgents/com.medusko.hotboi.plist`
-- **View Live Logs**: `tail -f /tmp/hotboi_collector.log`
-- **Dashboard**: `http://localhost:8080`
-- **Telemetry API**: `http://localhost:8080/api/telemetry`
+- **Service Configuration**: `~/Library/LaunchAgents/com.medusko.hotboi.plist` (`chmod 600`)
+- **View Live Logs**: `tail -f ~/.hotboi/hotboi_collector.log`
 
 ---
 
-## 🪟 Windows 10 / 11 Deployment
-
-Run the included background launcher or configure as a persistent service:
+## Windows 10 / 11 Deployment
 
 ```powershell
-# In PowerShell (Run as Administrator to allow port 8080 through Windows Firewall)
+# Allow LAN mobile access on port 8080 (Administrator PowerShell)
 New-NetFirewallRule -DisplayName "HotBoi Server Port 8080" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
 
-# Launch collector persistently in background
-powershell -ExecutionPolicy Bypass -File .\start_collector.ps1
+# Launch collector bound to LAN with optional API token
+powershell -ExecutionPolicy Bypass -File .\start_collector.ps1 --bind 0.0.0.0 --api-token "your-lan-secret"
 ```
-
-- **Default Directory**: `C:\HotBoi\`
-- **Firewall**: Port 8080 TCP Inbound Allow
-- **Background Runner**: `start_collector.bat` / `start_collector.ps1`
-- **Dashboard**: `http://localhost:8080`
-- **Telemetry API**: `http://localhost:8080/api/telemetry`
 
 ---
 
-## 🐧 Linux Deployment (Debian / Ubuntu systemd)
-
-Install as a systemd service that automatically starts on system boot:
+## Linux Deployment (Debian / Ubuntu `systemd`)
 
 ```bash
-sudo bash install_linux_service.sh
+sudo HOTBOI_API_TOKEN="your-lan-secret" bash install_linux_service.sh
 ```
 
-- **Target Directory**: `/opt/hotboi/`
+- **Target Directory**: `/opt/hotboi/` (token stored `0600` in `/opt/hotboi/.env`)
 - **Systemd Unit**: `/etc/systemd/system/hotboi.service`
-- **Service Controls**:
-  - `sudo systemctl status hotboi`
-  - `sudo systemctl restart hotboi`
-  - `journalctl -u hotboi -f`
-- **Firewall**: Automatically configures `ufw allow 8080/tcp` if UFW is active.
-- **Dashboard**: `http://localhost:8080`
-- **Telemetry API**: `http://localhost:8080/api/telemetry`
+- **Service Controls**: `sudo systemctl status hotboi` / `journalctl -u hotboi -f`
 
 ---
 
-## 📡 REST API Specification
+## REST API Specification
 
-### `GET /api/telemetry` (or `/telemetry.json`)
+When `--api-token` / `HOTBOI_API_TOKEN` is configured, include `X-HotBoi-Token: <token>` on all `/api/*` requests (supported natively in **HotBoi Android Settings → Server API Token**).
 
-Returns the latest real-time sample:
-
-```json
-{
-  "timestamp": "2026-10-28 22:20:00",
-  "optic_temp": 40.58,
-  "cpu0_temp": 54.5,
-  "cpu1_temp": 53.1,
-  "ploam": "O5.1",
-  "rx_power": -22.08,
-  "tx_power": 4.51,
-  "bias_ma": 13.82,
-  "ping_ms": 5.92,
-  "device_name": "UniFi Cloud Gateway Fiber (White Bean)",
-  "sfp_port": "Port 7 SFP+"
-}
-```
-
-### `GET /health`
-
-Returns `200 OK` string for uptime monitors.
+- `GET /api/telemetry` — Latest real-time telemetry sample JSON
+- `GET /api/history` — Full bounded 2,500-sample chart history bundle
+- `GET /api/config` & `POST /api/config` — Read or update `ping_target` (cross-origin browser `POST` requests are blocked)
+- `GET /health` — Unauthenticated `200 OK` liveness probe

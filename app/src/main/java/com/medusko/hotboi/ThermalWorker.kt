@@ -24,6 +24,7 @@ class ThermalWorker(
                 val sample = result.getOrThrow()
                 TelemetryRepository.addSample(context, sample, SshCollector.MODE_SSH)
                 NotificationHelper.checkThresholdAndAlert(context, sample)
+                HotBoiWidgetProvider.updateAllWidgets(context)
             }
         } else if (
             mode == SshCollector.MODE_MAC_SERVER ||
@@ -37,6 +38,7 @@ class ThermalWorker(
                 val (_, sample) = fetchRes.getOrThrow()
                 TelemetryRepository.addSample(context, sample, mode)
                 NotificationHelper.checkThresholdAndAlert(context, sample)
+                HotBoiWidgetProvider.updateAllWidgets(context)
             }
         }
         return Result.success()

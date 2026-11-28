@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Medusko 2x2 Home Screen Widget Grid Icon -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,3h8v8H3V3zM13,3h8v8h-8V3zM3,13h8v8H3v-8zM16,13h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z" />
+</vector>

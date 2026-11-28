@@ -3,8 +3,11 @@ package com.medusko.hotboi
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Dialog
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -430,6 +433,7 @@ class MainActivity : AppCompatActivity() {
         }
         applyNativeThemeColors()
         updateWebViewDisplayPreferences()
+        HotBoiWidgetProvider.updateAllWidgets(this)
         Toast.makeText(
             this,
             if (newTheme == SshCollector.THEME_DARK) "Dark Mode activated" else "Light Mode activated",
@@ -490,6 +494,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit { putString(SshCollector.KEY_TEMP_UNIT, newUnit) }
             updateUnitButtonLabel()
             updateWebViewDisplayPreferences()
+            HotBoiWidgetProvider.updateAllWidgets(this)
             val label = if (newUnit == SshCollector.UNIT_FAHRENHEIT) "Switched to Fahrenheit (°F)" else "Switched to Celsius (°C)"
             Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
@@ -605,6 +610,7 @@ class MainActivity : AppCompatActivity() {
                             val sample = result.getOrThrow()
                             pushSampleUpdateToWebView(sample, SshCollector.MODE_SSH)
                             NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
+                            HotBoiWidgetProvider.updateAllWidgets(this@MainActivity)
 
                             binding.btnErrorLog.visibility = View.GONE
                             setStatusBadgeContent("SSH ($sfpIface)", R.drawable.ic_mode_ssh, getActiveThemeColors().brandBlue)
@@ -650,6 +656,7 @@ class MainActivity : AppCompatActivity() {
                             binding.swipeRefresh.isRefreshing = false
                             pushSampleUpdateToWebView(sample, mode)
                             NotificationHelper.checkThresholdAndAlert(this@MainActivity, sample)
+                            HotBoiWidgetProvider.updateAllWidgets(this@MainActivity)
 
                             binding.btnErrorLog.visibility = View.GONE
                             setStatusBadgeContent(serverName, R.drawable.ic_mode_server, getActiveThemeColors().brandBlue)
@@ -684,6 +691,7 @@ class MainActivity : AppCompatActivity() {
 
             else -> {
                 injectTelemetryIntoWebView()
+                HotBoiWidgetProvider.updateAllWidgets(this)
                 binding.btnErrorLog.visibility = View.GONE
                 setStatusBadgeContent("Offline", R.drawable.ic_mode_offline, getActiveThemeColors().textSecondary)
                 binding.swipeRefresh.isRefreshing = false
@@ -919,11 +927,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         whatsNewBox.addView(TextView(this).apply {
-            text = "• Unified Medusko Cobalt Blue, Warm Gold, Dark Obsidian & Warm Linen palette matching Keyboardy & Lagatron\n" +
+            text = "• Medusko Home Screen Thermal Widget with live Optic Temp, CPU Temp, Rx dBm, Ping & 1-tap refresh\n" +
+                "• Unified Medusko Cobalt Blue, Warm Gold, Dark Obsidian & Warm Linen palette matching Keyboardy & Lagatron\n" +
                 "• Pooled SSH session engine + pure POSIX shell probe (~150 ms polls, zero python3 gateway requirement)\n" +
                 "• Hardened TOFU SSH host-key pinning, fail-closed AES-256-GCM Keystore encryption & WAN HTTPS enforcement\n" +
                 "• Append-only JSONL storage + WebViewAssetLoader & WebMessageCompat O(1) incremental chart updates\n" +
-                "• R8 full-mode optimization & stripped PQC tables reducing release APK footprint by ~35%"
+                "• R8 full-mode optimization & stripped PQC tables reducing release APK footprint to 4.6 MB"
             setTextColor(tc.textPrimary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             setLineSpacing(dpToPx(3).toFloat(), 1f)
@@ -1296,6 +1305,12 @@ class MainActivity : AppCompatActivity() {
         val rbThemeSystem = dialogView.findViewById<RadioButton>(R.id.rbThemeSystem)
         val rbThemeLight = dialogView.findViewById<RadioButton>(R.id.rbThemeLight)
         val rbThemeDark = dialogView.findViewById<RadioButton>(R.id.rbThemeDark)
+        val btnAddWidget = dialogView.findViewById<Button>(R.id.btnAddWidget)
+
+        btnAddWidget.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            requestPinThermalWidget()
+        }
 
         etDeviceName.setText(prefs.getString(SshCollector.KEY_DEVICE_NAME, SshCollector.DEFAULT_DEVICE_NAME))
 
@@ -1827,6 +1842,7 @@ class MainActivity : AppCompatActivity() {
 
             hasPromptedPingMismatch = false
             injectTelemetryIntoWebView()
+            HotBoiWidgetProvider.updateAllWidgets(this)
             triggerDataRefresh(isSilent = false)
         }
 
@@ -1844,6 +1860,28 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun requestPinThermalWidget() {
+        val appWidgetManager = AppWidgetManager.getInstance(this)
+        val provider = ComponentName(this, HotBoiWidgetProvider::class.java)
+        if (appWidgetManager.isRequestPinAppWidgetSupported) {
+            val refreshCallback = Intent(this, HotBoiWidgetProvider::class.java).apply {
+                action = HotBoiWidgetProvider.ACTION_WIDGET_REFRESH
+            }
+            val successPi = PendingIntent.getBroadcast(
+                this,
+                2005,
+                refreshCallback,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val requested = appWidgetManager.requestPinAppWidget(provider, null, successPi)
+            if (!requested) {
+                Toast.makeText(this, "Long-press your Home Screen → Widgets → HotBoi to add the widget", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(this, "Long-press your Home Screen → Widgets → HotBoi to add the widget", Toast.LENGTH_LONG).show()
+        }
     }
 
     private var adView: com.google.android.gms.ads.AdView? = null

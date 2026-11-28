@@ -8,6 +8,8 @@
     <string name="use_local_offline">Load Bundled Offline Telemetry</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
-    <string name="connecting">Connecting to Thermal Monitor...</string>
+    <string name="connecting">Connecting to Thermal Monitor…</string>
     <string name="connection_failed">Could not connect to server. Showing offline data.</string>
+    <string name="widget_name">HotBoi SFP+ Thermal Monitor</string>
+    <string name="widget_description">Live SFP+ optical transceiver temperature, CPU core temp, Rx power (dBm), and ping latency with 1-tap refresh.</string>
 </resources>

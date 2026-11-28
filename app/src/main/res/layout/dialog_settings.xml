@@ -798,6 +798,21 @@
                     app:buttonTint="@color/accent_blue" />
             </RadioGroup>
 
+            <Button
+                android:id="@+id/btnAddWidget"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="12dp"
+                android:text="Pin Home Screen Thermal Widget"
+                android:textColor="@color/accent_blue"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                app:icon="@drawable/ic_widget"
+                app:iconGravity="textStart"
+                app:iconTint="@color/accent_blue"
+                app:iconSize="16dp" />
+
         </LinearLayout>
     </ScrollView>
 

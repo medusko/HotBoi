@@ -98,4 +98,12 @@ class SecurityAndOptimizationTest {
         val sharedB = bob.getSecret(alice.q)
         assertTrue(sharedA.contentEquals(sharedB))
     }
+
+    @Test
+    fun widgetTemperatureFormatting_respectsCelsiusFahrenheitAndNullBounds() {
+        assertEquals("43.1°C", HotBoiWidgetProvider.formatTemperature(43.08, useFahrenheit = false))
+        assertEquals("109.5°F", HotBoiWidgetProvider.formatTemperature(43.08, useFahrenheit = true))
+        assertEquals("--", HotBoiWidgetProvider.formatTemperature(null, useFahrenheit = false))
+        assertEquals("--", HotBoiWidgetProvider.formatTemperature(0.0, useFahrenheit = true))
+    }
 }
